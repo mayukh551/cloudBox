@@ -27,9 +27,8 @@ func Router() *mux.Router {
 	file := api.PathPrefix("/file").Subrouter()
 	file.Use(middlewares.Authenticate)
 
-	file.HandleFunc("/get", controllers.GetFile).Methods("GET")               // single or multiple uploads
-	file.HandleFunc("/upload/{type}", controllers.UploadFile).Methods("POST") // single or multiple uploads
-	// file.HandleFunc("/download/{type}") // single or multiple in a zip file
+	file.HandleFunc("/download/{type}", controllers.DownloadFile).Methods("PUT") // single or multiple uploads
+	file.HandleFunc("/upload/{type}", controllers.UploadFile).Methods("POST")    // single or multiple uploads
 	// file.HandleFunc("/share/{type}")    // type: public, invited only via email
 	// file.HandleFunc("/search")          // search files
 
