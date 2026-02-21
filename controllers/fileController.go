@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync"
 
 	"strings"
 
@@ -42,7 +43,7 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 	userID, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		respondWithError(w, err.Error(), http.StatusUnauthorized)
 		return ""
 	}
 
@@ -59,7 +60,7 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		http.Error(w, "failed to load AWS config", http.StatusInternalServerError)
+		respondWithError(w, "failed to load AWS config", http.StatusInternalServerError)
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		http.Error(w, "failed to list objects: "+err.Error(), http.StatusInternalServerError)
+		respondWithError(w, "failed to list objects: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -106,7 +107,7 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	fileKey := data["file"].(string)
 	if fileKey == "" {
-		http.Error(w, "missing 'file' query parameter", http.StatusBadRequest)
+		respondWithError(w, "missing 'file' query parameter", http.StatusBadRequest)
 		return
 	}
 
@@ -116,7 +117,7 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		http.Error(w, "failed to load AWS config", http.StatusInternalServerError)
+		respondWithError(w, "failed to load AWS config", http.StatusInternalServerError)
 		return
 	}
 
@@ -129,7 +130,7 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		http.Error(w, "file not found: "+err.Error(), http.StatusNotFound)
+		respondWithError(w, "file not found: "+err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -157,7 +158,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm(10 << 20)
 
 	if err != nil {
-		http.Error(w, "Error while parsing file", 400)
+		respondWithError(w, "Error while parsing file", 400)
 		return
 	}
 
@@ -165,7 +166,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err)
-		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		respondWithError(w, "Error retrieving the file", http.StatusBadRequest)
 		return
 	}
 
@@ -190,7 +191,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Println(err)
-		http.Error(w, "Error while uploading your file", http.StatusInternalServerError)
+		respondWithError(w, "Error while uploading your file", http.StatusInternalServerError)
 		return
 	}
 
@@ -202,13 +203,17 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
-	var data map[string]any
+	var data map[string][]string
 
-	json.NewDecoder(r.Body).Decode(&data)
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		respondWithError(w, "Error while decoding JSON", http.StatusBadRequest)
+		return
+	}
 
-	fileKey := data["file"].(string)
-	if fileKey == "" {
-		http.Error(w, "missing 'file' query parameter", http.StatusBadRequest)
+	files := data["files"]
+	if len(files) == 0 {
+		respondWithError(w, "'files' field cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -216,21 +221,39 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		config.WithRegion(h.region),
 	)
 	if err != nil {
-		log.Fatal(err)
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	svc := s3.NewFromConfig(cfg)
 
-	_, err = svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-		Bucket: aws.String(h.bucketName),
-		Key:    aws.String(userID + "/" + fileKey),
-	})
+	// *************************
 
-	if err != nil {
-		fmt.Println(err)
-		http.Error(w, "Error while deleting your file", http.StatusInternalServerError)
-		return
+	var errorFileNames []string
+
+	var wg sync.WaitGroup
+
+	for _, fileKey := range files {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err = svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+				Bucket: aws.String(h.bucketName),
+				Key:    aws.String(userID + "/" + fileKey),
+			})
+
+			if err != nil {
+				fmt.Println(err)
+				errorFileNames = append(errorFileNames, fileKey)
+			}
+		}()
 	}
 
-	respondWithJSON(w, fmt.Sprintf("%s Deleted Successfully!", fileKey), http.StatusOK)
+	wg.Wait()
+
+	if len(errorFileNames) > 0 {
+		respondWithError(w, errorFileNames, http.StatusInternalServerError)
+		return
+	}
+	respondWithJSON(w, fmt.Sprintf("File(s) Deleted Successfully!"), http.StatusOK)
 }

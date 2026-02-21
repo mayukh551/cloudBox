@@ -50,7 +50,7 @@ func Router() *mux.Router {
 	file.HandleFunc("/get-list", h.GetList).Methods("GET")
 	file.HandleFunc("/download/{type}", h.DownloadFile).Methods("PUT")
 	file.HandleFunc("/upload/{type}", h.UploadFile).Methods("POST")
-	file.HandleFunc("/delete", h.DeleteFile).Methods("DELETE")
+	file.HandleFunc("/delete", h.DeleteFile).Methods("PUT")
 
 	return r
 
