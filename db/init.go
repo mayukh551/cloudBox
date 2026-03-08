@@ -27,13 +27,13 @@ func Init() error {
 
 	DB = conn
 
-	// Create users table if not exists
+	// Create users table if does not exist
 	usersTableQuery := `
 	CREATE TABLE IF NOT EXISTS users (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		email TEXT UNIQUE NOT NULL,
-		password TEXT NOT NULL,
+		id VARCHAR(255) PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		email VARCHAR(255) UNIQUE NOT NULL,
+		password VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -44,22 +44,43 @@ func Init() error {
 		fmt.Println("Failed to create table for users!", err)
 	}
 
-	// // Create tasks table if not exists
-	// tasksTableQuery := `
-	// CREATE TABLE IF NOT EXISTS tasks (
-	// 	id SERIAL PRIMARY KEY,
-	// 	name TEXT NOT NULL,
-	// 	url TEXT,
-	// 	user_id INTEGER REFERENCES users(id),
-	// 	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	// 	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	// );`
+	// Create tasks table if does not exist
+	fileTableQuery := `
+		CREATE TABLE IF NOT EXISTS files (
+			id VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			type VARCHAR(50) NOT NULL CHECK (type IN ('file', 'folder')),
+			size BIGINT DEFAULT 0,
+			url TEXT,
+			userID VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		);
+	`
 
-	// _, err = DB.Exec(tasksTableQuery)
+	_, err = DB.Exec(fileTableQuery)
 
-	// if err != nil {
-	// 	fmt.Println("Failed to create table for users!", err)
-	// }
+	if err != nil {
+		fmt.Println("Failed to create table for users!", err)
+	}
+
+	// create share table if does not exist
+	shareTableQuery := `
+		CREATE TABLE IF NOT EXISTS shares (
+			id VARCHAR(255) PRIMARY KEY,
+			sharedTo VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			sharedBy VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			fileID VARCHAR(255) NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+			createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		);	
+	`
+
+	_, err = DB.Exec(shareTableQuery)
+
+	if err != nil {
+		fmt.Println("Failed to create table for share!", err)
+	}
 
 	println("Database initialized and tables created if they did not exist.")
 
