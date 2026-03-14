@@ -11,7 +11,7 @@ type userEntity struct {
 
 type fileEntity struct {
 	ID        string `db:"id"`
-	Name      string `db:"name"`
+	Title     string `db:"name"`
 	Type      string `db:"type"`
 	Size      string `db:"size"`
 	Url       string `db:"url"`
@@ -24,7 +24,7 @@ type shareEntity struct {
 	ID        string `db:"id"`
 	SharedTo  string `db:"sharedTo"`
 	SharedBy  string `db:"sharedBy"`
-	fileID    string `db:"fileID"`
+	FileID    string `db:"fileID"`
 	CreatedAt string `db:"createdAt"`
 	UpdatedAt string `db:"updatedAt"`
 }

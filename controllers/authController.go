@@ -13,7 +13,15 @@ import (
 func SignUp(w http.ResponseWriter, r *http.Request) {
 
 	var data models.CreateUser
-	json.NewDecoder(r.Body).Decode(&data)
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.ValidateStruct(data); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	user, err := db.GetUserByEmail(data.Email)
 
@@ -63,7 +71,15 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	var data models.CreateUser
 
-	json.NewDecoder(r.Body).Decode(&data)
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.ValidateStruct(data); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	user, err := db.VerifyUser(data.Email, data.Password)
 

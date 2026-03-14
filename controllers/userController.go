@@ -45,7 +45,15 @@ func UpdateUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewDecoder(r.Body).Decode(&user)
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		respondWithJSON(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.ValidateStruct(user); err != nil {
+		respondWithJSON(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	err = db.UpdateUser(id, user)
 

@@ -99,6 +99,11 @@ func GetUserByID(id string) (*models.User, error) {
 
 // GetUserByEmail retrieves a user by email (bonus function for auth)
 func GetUserByEmail(email string) (*models.User, error) {
+
+	if email == "" {
+		return nil, fmt.Errorf("email cannot be empty or undefined!")
+	}
+
 	var user userEntity
 
 	err := DB.QueryRow(

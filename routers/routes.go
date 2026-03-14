@@ -52,6 +52,14 @@ func Router() *mux.Router {
 	file.HandleFunc("/upload/{type}", h.UploadFile).Methods("POST")
 	file.HandleFunc("/delete", h.DeleteFile).Methods("PUT")
 
+	// Share
+	share := api.PathPrefix("/share").Subrouter()
+	share.Use(middlewares.Authenticate)
+
+	share.HandleFunc("/share", controllers.Share).Methods("POST")
+	share.HandleFunc("/get-shared-list", controllers.ListShares).Methods("GET")
+	share.HandleFunc("/get-shared-with-me", controllers.ListSharedWithMe).Methods("GET")
+
 	return r
 
 }

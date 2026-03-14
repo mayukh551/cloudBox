@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/mayukh551/cloudbox/middlewares"
@@ -82,4 +83,13 @@ func GetUserID(r *http.Request) (string, error) {
 		return "", errors.New("user not found in req context")
 	}
 	return userCtxt.ID, nil
+}
+
+func GetRequestUser(r *http.Request) models.RequestUser {
+	return r.Context().Value("user").(models.RequestUser)
+}
+
+func ValidateStruct(s any) error {
+	validate := validator.New()
+	return validate.Struct(s)
 }

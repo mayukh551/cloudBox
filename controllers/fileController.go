@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/mayukh551/cloudbox/utils"
 )
@@ -54,19 +53,7 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
-	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(h.region),
-	)
-
-	if err != nil {
-		respondWithError(w, "failed to load AWS config", http.StatusInternalServerError)
-		return
-	}
-
-	svc := s3.NewFromConfig(cfg)
-
-	result, err := svc.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
+	result, err := h.s3.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
 		Bucket: aws.String(h.bucketName),
 		Prefix: aws.String(userID),
 	})
@@ -111,20 +98,8 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(h.region),
-	)
-
-	if err != nil {
-		respondWithError(w, "failed to load AWS config", http.StatusInternalServerError)
-		return
-	}
-
-	svc := s3.NewFromConfig(cfg)
-
 	// Get the specific object from S3
-	result, err := svc.GetObject(context.TODO(), &s3.GetObjectInput{
+	result, err := h.s3.GetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: aws.String(h.bucketName),
 		Key:    aws.String(userID + "/" + fileKey),
 	})
@@ -151,6 +126,22 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// func (h *S3Handler) DownloadMultipleFiles(w http.ResponseWriter, r *http.Request) {
+
+// 	userID := fetchUserID(w, r)
+
+// 	var data map[string]any
+
+// 	json.NewDecoder(r.Body).Decode(&data)
+
+// 	fileKey := data["files"].(string)
+// 	if fileKey == "" {
+// 		respondWithError(w, "missing 'file' query parameter", http.StatusBadRequest)
+// 		return
+// 	}
+
+// }
+
 func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
@@ -172,18 +163,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	defer file.Close()
 
-	// Load AWS config (V2 SDK — no more sessions)
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(h.region),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create S3 service client
-	svc := s3.NewFromConfig(cfg)
-
-	_, err = svc.PutObject(context.TODO(), &s3.PutObjectInput{
+	_, err = h.s3.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: aws.String(h.bucketName),
 		Key:    aws.String(userID + "/" + handler.Filename),
 		Body:   file,
@@ -217,34 +197,27 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(h.region),
-	)
-	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	svc := s3.NewFromConfig(cfg)
-
 	// *************************
 
 	var errorFileNames []string
 
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 
 	for _, fileKey := range files {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err = svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+			_, err = h.s3.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 				Bucket: aws.String(h.bucketName),
 				Key:    aws.String(userID + "/" + fileKey),
 			})
 
 			if err != nil {
 				fmt.Println(err)
+				mu.Lock()
 				errorFileNames = append(errorFileNames, fileKey)
+				mu.Unlock()
 			}
 		}()
 	}
