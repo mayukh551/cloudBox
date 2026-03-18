@@ -25,7 +25,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 
 	user := utils.GetRequestUser(r)
 
-	sharedTo, err := db.GetUserByEmail(data.Email)
+	sharedTo, err := db.GetUserByEmail(data.Email, r.Context())
 
 	if err != nil {
 		respondWithError(w, "User not found!", 404)
@@ -36,7 +36,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 		SharedTo: sharedTo.ID,
 		SharedBy: user.ID,
 		FileID:   data.FileID,
-	})
+	}, r.Context())
 
 	if err != nil {
 		respondWithError(w, err.Error(), 500)
@@ -50,7 +50,7 @@ func ListShares(w http.ResponseWriter, r *http.Request) {
 
 	user := utils.GetRequestUser(r)
 
-	shares := db.ListShares(user.ID)
+	shares := db.ListShares(user.ID, r.Context())
 
 	if shares == nil {
 		respondWithError(w, "No shares found!", 404)
@@ -64,7 +64,7 @@ func ListSharedWithMe(w http.ResponseWriter, r *http.Request) {
 
 	user := utils.GetRequestUser(r)
 
-	shares := db.ListSharedWithMe(user.ID)
+	shares := db.ListSharedWithMe(user.ID, r.Context())
 
 	if shares == nil {
 		respondWithError(w, "No shares found!", 404)

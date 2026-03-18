@@ -1,17 +1,22 @@
 package db
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/mayukh551/cloudbox/models"
 	"github.com/mayukh551/cloudbox/utils"
 )
 
 // CreateUser creates a new user and returns the created user with ID
-func CreateUser(data models.CreateUser) (*models.User, error) {
+func CreateUser(data models.CreateUser, ctxt context.Context) (*models.User, error) {
 	var user userEntity
 
-	err := DB.QueryRow(
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	err := DB.QueryRowContext(queryCtxt,
 		`INSERT INTO users (id, name, email, password)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING id, name, email, password`,
@@ -30,8 +35,12 @@ func CreateUser(data models.CreateUser) (*models.User, error) {
 }
 
 // UpdateUser updates an existing user's information
-func UpdateUser(id string, data models.UpdateUser) error {
-	result, err := DB.Exec(
+func UpdateUser(id string, data models.UpdateUser, ctxt context.Context) error {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	result, err := DB.ExecContext(queryCtxt,
 		`UPDATE users 
 		 SET name = $1, email = $2, password = $3
 		 WHERE id = $4`,
@@ -55,8 +64,12 @@ func UpdateUser(id string, data models.UpdateUser) error {
 }
 
 // DeleteUser deletes a user by ID
-func DeleteUser(id string) error {
-	result, err := DB.Exec(
+func DeleteUser(id string, ctxt context.Context) error {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	result, err := DB.ExecContext(queryCtxt,
 		`DELETE FROM users WHERE id = $1`,
 		id,
 	)
@@ -78,10 +91,13 @@ func DeleteUser(id string) error {
 }
 
 // GetUserByID retrieves a user by ID (bonus function)
-func GetUserByID(id string) (*models.User, error) {
+func GetUserByID(id string, ctxt context.Context) (*models.User, error) {
 	var user userEntity
 
-	err := DB.QueryRow(
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	err := DB.QueryRowContext(queryCtxt,
 		`SELECT id, name, email FROM users WHERE id = $1`,
 		id,
 	).Scan(&user.ID, &user.Name, &user.Email)
@@ -98,7 +114,10 @@ func GetUserByID(id string) (*models.User, error) {
 }
 
 // GetUserByEmail retrieves a user by email (bonus function for auth)
-func GetUserByEmail(email string) (*models.User, error) {
+func GetUserByEmail(email string, ctxt context.Context) (*models.User, error) {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
 
 	if email == "" {
 		return nil, fmt.Errorf("email cannot be empty or undefined!")
@@ -106,7 +125,7 @@ func GetUserByEmail(email string) (*models.User, error) {
 
 	var user userEntity
 
-	err := DB.QueryRow(
+	err := DB.QueryRowContext(queryCtxt,
 		`SELECT id, name, email FROM users WHERE email = $1`,
 		email,
 	).Scan(&user.ID, &user.Name, &user.Email)
@@ -122,13 +141,16 @@ func GetUserByEmail(email string) (*models.User, error) {
 	}, nil
 }
 
-func VerifyUser(email string, password string) (models.User, error) {
+func VerifyUser(email string, password string, ctxt context.Context) (models.User, error) {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
 
 	var user userEntity
 
 	fmt.Println("email", email)
 
-	err := DB.QueryRow(
+	err := DB.QueryRowContext(queryCtxt,
 		`SELECT id, name, email, password FROM users WHERE email = $1`,
 		email,
 	).Scan(&user.ID, &user.Name, &user.Email, &user.Password)

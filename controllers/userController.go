@@ -17,7 +17,7 @@ func GetUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.GetUserByID(id)
+	user, err := db.GetUserByID(id, r.Context())
 
 	if err != nil {
 		respondWithJSON(w, "Error getting user details", http.StatusInternalServerError)
@@ -48,7 +48,7 @@ func UpdateUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = db.UpdateUser(id, user)
+	err = db.UpdateUser(id, user, r.Context())
 
 	if err != nil {
 		respondWithJSON(w, "Error updating user details", http.StatusInternalServerError)
@@ -67,7 +67,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = db.DeleteUser(id)
+	err = db.DeleteUser(id, r.Context())
 
 	if err != nil {
 		respondWithJSON(w, "Error deleting user", http.StatusInternalServerError)

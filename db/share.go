@@ -1,17 +1,22 @@
 package db
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/mayukh551/cloudbox/models"
 	"github.com/mayukh551/cloudbox/utils"
 )
 
-func CreateShare(data models.ShareUser) error {
+func CreateShare(data models.ShareUser, ctxt context.Context) error {
 
 	var id string = utils.GenerateUUID()
 
-	_, err := DB.Exec(
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	_, err := DB.ExecContext(queryCtxt,
 		`INSERT INTO shares (id, sharedTo, sharedBy, fileID)
 		 VALUES ($1, $2, $3, $4)`,
 		id, data.SharedTo, data.SharedBy, data.FileID,
@@ -24,11 +29,14 @@ func CreateShare(data models.ShareUser) error {
 	return nil
 }
 
-func ListShares(userID string) []models.ShareList {
+func ListShares(userID string, ctxt context.Context) []models.ShareList {
 
 	var shares []models.ShareList
 
-	rows, err := DB.Query(
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	rows, err := DB.QueryContext(queryCtxt,
 		`SELECT id, sharedTo, sharedBy, fileID, updatedAt FROM shares WHERE sharedBy = $1`,
 		userID,
 	)
@@ -50,11 +58,14 @@ func ListShares(userID string) []models.ShareList {
 	return shares
 }
 
-func ListSharedWithMe(userID string) []models.ShareList {
+func ListSharedWithMe(userID string, ctxt context.Context) []models.ShareList {
 
 	var shares []models.ShareList
 
-	rows, err := DB.Query(
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	rows, err := DB.QueryContext(queryCtxt,
 		`SELECT id, sharedTo, sharedBy, fileID, updatedAt FROM shares WHERE sharedTo = $1`,
 		userID,
 	)
