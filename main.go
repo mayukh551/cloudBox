@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/mayukh551/cloudbox/db"
@@ -43,9 +47,31 @@ func main() {
 	addr := fmt.Sprintf(":%s", PORT)
 
 	fmt.Println("Server listening on port", PORT)
-	err = http.ListenAndServe(addr, handler)
-	if err != nil {
-		fmt.Println("Error listening on port", PORT)
-		panic(err)
+	srv := &http.Server{Addr: addr, Handler: handler}
+
+	// channel to catch OS signals
+	quit := make(chan os.Signal, 1)
+
+	// Notify on SIGINT (Ctrl+C) and SIGTERM (sent by Kubernetes on pod termination)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("Error starting server: %s\n", err)
+		}
+	}()
+
+	// block until a signal is received
+	sig := <-quit
+	log.Printf("Received signal: %s. Initiating graceful shutdown...", sig)
+
+	ctxt, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctxt); err != nil {
+		log.Fatalf("Server shutdown error: %s\n", err)
 	}
+
+	log.Println("Server gracefully stopped")
+
 }

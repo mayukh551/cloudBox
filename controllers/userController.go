@@ -24,13 +24,6 @@ func GetUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err = db.GetUserByID(user.ID)
-
-	if err != nil {
-		respondWithJSON(w, "Error getting user details", http.StatusInternalServerError)
-		return
-	}
-
 	respondWithJSON(w, user, http.StatusOK)
 }
 
