@@ -4,25 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"os"
-	"path"
 	"sync"
-
-	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/mayukh551/cloudbox/db"
+	"github.com/mayukh551/cloudbox/models"
 	"github.com/mayukh551/cloudbox/utils"
 )
-
-type File struct {
-	Name       string `json:"name"`
-	ModifiedAt string `json:"modifiedAt"`
-	Size       int64  `json:"size"`
-}
 
 type S3Handler struct {
 	s3         *s3.Client
@@ -41,7 +33,7 @@ func NewHandler(s3 *s3.Client) *S3Handler {
 func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 	userID, err := utils.GetUserID(r)
 
-	if err != nil {
+	if err != nil || userID == "" {
 		respondWithError(w, err.Error(), http.StatusUnauthorized)
 		return ""
 	}
@@ -53,34 +45,54 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
-	result, err := h.s3.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
-		Bucket: aws.String(h.bucketName),
-		Prefix: aws.String(userID),
-	})
+	files, err := db.ListFiles(userID, r.Context())
+
+	fmt.Println(files)
 
 	if err != nil {
-		respondWithError(w, "failed to list objects: "+err.Error(), http.StatusInternalServerError)
+		respondWithError(w, "failed to list objects", http.StatusInternalServerError)
 		return
 	}
 
-	var files []File = []File{}
-	for _, obj := range result.Contents {
-		key := aws.ToString(obj.Key)
-		// Extract filename from userID/filename
-		parts := strings.Split(key, "/")
-		name := key
-		if len(parts) > 1 {
-			name = parts[1]
-		}
+	respondWithJSON(w, files, http.StatusOK)
 
-		files = append(files, File{
-			Name:       name,
-			ModifiedAt: obj.LastModified.String(),
-			Size:       *obj.Size,
-		})
+}
+
+func (h *S3Handler) Rename(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	var data models.UpdateFileNamePayload
+	json.NewDecoder(r.Body).Decode(&data)
+
+	// update filename on table
+	data.UpdatedAt = time.Now().Format(time.RFC3339) // TODO: need to recheck this part
+	err := db.UpdateFileName(data, r.Context())
+
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	respondWithJSON(w, files, http.StatusOK)
+	// update file on s3
+	oldFileKey := userID + "/" + data.OldTitle
+
+	// Copy
+	_, err = h.s3.CopyObject(context.TODO(), &s3.CopyObjectInput{
+		Bucket:     aws.String(h.bucketName),
+		CopySource: aws.String(oldFileKey),
+		Key:        aws.String(data.Title),
+	})
+
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	// Delete old file
+	if err = utils.DeleteObject(h.s3, h.bucketName, oldFileKey); err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	respondWithJSON(w, "File renamed successfully", http.StatusOK)
 
 }
 
@@ -98,84 +110,75 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the specific object from S3
-	result, err := h.s3.GetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: aws.String(h.bucketName),
-		Key:    aws.String(userID + "/" + fileKey),
-	})
+	fileKey = userID + "/" + fileKey
+
+	// create presign client to get presign URL for download
+	url, err := utils.PresignGetObject(h.s3, h.bucketName, fileKey)
 
 	if err != nil {
-		respondWithError(w, "file not found: "+err.Error(), http.StatusNotFound)
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	defer result.Body.Close()
+	respondWithJSON(w, models.PreSignedResponse{
+		Key: fileKey,
+		Url: url,
+	}, http.StatusOK)
 
-	// Set response headers
-	filename := path.Base(fileKey) // extract filename from key
-
-	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-	w.Header().Set("Content-Type", aws.ToString(result.ContentType))
-	if result.ContentLength != nil {
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", *result.ContentLength))
-	}
-
-	// Stream S3 body directly to the HTTP response
-	if _, err := io.Copy(w, result.Body); err != nil {
-		log.Println("error streaming file:", err)
-	}
 }
-
-// func (h *S3Handler) DownloadMultipleFiles(w http.ResponseWriter, r *http.Request) {
-
-// 	userID := fetchUserID(w, r)
-
-// 	var data map[string]any
-
-// 	json.NewDecoder(r.Body).Decode(&data)
-
-// 	fileKey := data["files"].(string)
-// 	if fileKey == "" {
-// 		respondWithError(w, "missing 'file' query parameter", http.StatusBadRequest)
-// 		return
-// 	}
-
-// }
 
 func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
-	err := r.ParseMultipartForm(10 << 20)
+	var presignPayload models.PreSignedBody
+	json.NewDecoder(r.Body).Decode(&presignPayload)
+
+	key := userID + "/" + presignPayload.Filename
+
+	url, err := utils.PresignPutObject(h.s3, h.bucketName, key, presignPayload.ContentType)
 
 	if err != nil {
-		respondWithError(w, "Error while parsing file", 400)
+		respondWithError(w, "Error while creating a presigned URL", http.StatusInternalServerError)
 		return
 	}
 
-	file, handler, err := r.FormFile("file")
+	err = db.CreateFile(
+		models.CreateFile{
+			ID:     key,
+			Title:  presignPayload.Filename,
+			Type:   "file",
+			Size:   presignPayload.Size, // size will be updated later via a separate endpoint after upload is complete
+			UserID: userID,
+		},
+		r.Context(),
+	)
 
 	if err != nil {
-		fmt.Println(err)
-		respondWithError(w, "Error retrieving the file", http.StatusBadRequest)
+		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError)
 		return
 	}
 
-	defer file.Close()
+	respondWithJSON(w, models.PreSignedResponse{
+		Key: key,
+		Url: url,
+	}, http.StatusOK)
 
-	_, err = h.s3.PutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket: aws.String(h.bucketName),
-		Key:    aws.String(userID + "/" + handler.Filename),
-		Body:   file,
-	})
+}
 
-	if err != nil {
-		fmt.Println(err)
-		respondWithError(w, "Error while uploading your file", http.StatusInternalServerError)
+func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
+
+	var updatedData models.CreateFile
+
+	// TODO: field validation
+	json.NewDecoder(r.Body).Decode(&updatedData)
+
+	if err := db.UpdateFile(updatedData.ID, updatedData, r.Context()); err != nil {
+		respondWithError(w, "Error while updating file metadata", http.StatusInternalServerError)
 		return
 	}
 
-	respondWithJSON(w, fmt.Sprintf("%s Uploaded Successfully!", handler.Filename), http.StatusOK)
+	respondWithJSON(w, "File Updated Successfully", http.StatusOK)
 
 }
 
@@ -183,7 +186,7 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
-	var data map[string][]string
+	var data []models.DeleteFilePayload
 
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
@@ -191,7 +194,7 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files := data["files"]
+	files := data
 	if len(files) == 0 {
 		respondWithError(w, "'files' field cannot be empty", http.StatusBadRequest)
 		return
@@ -204,20 +207,26 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, fileKey := range files {
+	for _, file := range files {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
+			// delete from s3 bucket
 			_, err = h.s3.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 				Bucket: aws.String(h.bucketName),
-				Key:    aws.String(userID + "/" + fileKey),
+				Key:    aws.String(userID + "/" + file.Key),
 			})
 
 			if err != nil {
-				fmt.Println(err)
 				mu.Lock()
-				errorFileNames = append(errorFileNames, fileKey)
+				errorFileNames = append(errorFileNames, file.Key)
 				mu.Unlock()
+			}
+
+			// delete from Files Table
+			if err := db.DeleteFile(file.Id, r.Context()); err != nil {
+				respondWithError(w, "Failed to delete file from db", http.StatusInternalServerError)
 			}
 		}()
 	}

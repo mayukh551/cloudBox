@@ -49,7 +49,9 @@ func main() {
 	fmt.Println("Server listening on port", PORT)
 	srv := &http.Server{Addr: addr, Handler: handler}
 
-	// channel to catch OS signals
+	// Graceful shutdown of server
+
+	// channel to store OS signals
 	quit := make(chan os.Signal, 1)
 
 	// Notify on SIGINT (Ctrl+C) and SIGTERM (sent by Kubernetes on pod termination)

@@ -9,6 +9,30 @@ import (
 	"github.com/mayukh551/cloudbox/utils"
 )
 
+func FindUserByEmail(w http.ResponseWriter, r *http.Request) {
+
+	var user models.UserEmail
+
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.ValidateStruct(user); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	foundUser, err := db.GetUserByEmail(user.Email, r.Context())
+
+	if err != nil {
+		respondWithError(w, "User not found!", http.StatusNotFound)
+		return
+	}
+
+	respondWithJSON(w, foundUser, http.StatusOK)
+}
+
 func GetUserDetails(w http.ResponseWriter, r *http.Request) {
 	id, err := utils.GetUserID(r)
 

@@ -19,11 +19,12 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := utils.ValidateStruct(data); err != nil {
+		fmt.Println(err)
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	user, err := db.GetUserByEmail(data.Email)
+	user, err := db.GetUserByEmail(data.Email, r.Context())
 
 	if user != nil {
 		respondWithJSON(w, "User already exists!", http.StatusBadRequest)
@@ -47,7 +48,7 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err = db.CreateUser(data)
+	user, err = db.CreateUser(data, r.Context())
 
 	if err != nil {
 		fmt.Println(err)
@@ -69,7 +70,7 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 
 func Login(w http.ResponseWriter, r *http.Request) {
 
-	var data models.CreateUser
+	var data models.LoginUser
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
@@ -81,7 +82,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := db.VerifyUser(data.Email, data.Password)
+	user, err := db.VerifyUser(data.Email, data.Password, r.Context())
 
 	if err != nil {
 		respondWithJSON(w, "Invalid email or password", http.StatusUnauthorized)

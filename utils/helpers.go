@@ -1,11 +1,14 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -92,4 +95,18 @@ func GetRequestUser(r *http.Request) models.RequestUser {
 func ValidateStruct(s any) error {
 	validate := validator.New()
 	return validate.Struct(s)
+}
+
+func LoadAWSConfig() (*s3.Client, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion("ap-southeast-2"),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config, %w", err)
+	}
+
+	svc := s3.NewFromConfig(cfg)
+
+	return svc, nil
 }
