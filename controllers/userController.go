@@ -14,7 +14,7 @@ func FindUserByEmail(w http.ResponseWriter, r *http.Request) {
 	var user models.UserEmail
 
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
 		return
 	}
 

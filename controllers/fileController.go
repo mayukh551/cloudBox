@@ -63,7 +63,10 @@ func (h *S3Handler) Rename(w http.ResponseWriter, r *http.Request) {
 	userID := fetchUserID(w, r)
 
 	var data models.UpdateFileNamePayload
-	json.NewDecoder(r.Body).Decode(&data)
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		return
+	}
 
 	// update filename on table
 	data.UpdatedAt = time.Now().Format(time.RFC3339) // TODO: need to recheck this part
@@ -102,7 +105,10 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	var data map[string]any
 
-	json.NewDecoder(r.Body).Decode(&data)
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		return
+	}
 
 	fileKey := data["file"].(string)
 	if fileKey == "" {
@@ -145,7 +151,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	err = db.CreateFile(
 		models.CreateFile{
-			ID:     key,
+			ID:     utils.GenerateUUID(),
 			Title:  presignPayload.Filename,
 			Type:   "file",
 			Size:   presignPayload.Size, // size will be updated later via a separate endpoint after upload is complete

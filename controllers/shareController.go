@@ -14,7 +14,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 	var data models.FileShare
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		respondWithError(w, "Invalid request payload", http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
 		return
 	}
 
@@ -23,7 +23,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := utils.GetRequestUser(r)
+	userID := fetchUserID(w, r)
 
 	sharedTo, err := db.GetUserByEmail(data.Email, r.Context())
 
@@ -34,7 +34,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 
 	err = db.CreateShare(models.ShareUser{
 		SharedTo: sharedTo.ID,
-		SharedBy: user.ID,
+		SharedBy: userID,
 		FileID:   data.FileID,
 	}, r.Context())
 
@@ -43,14 +43,14 @@ func Share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, "", 200)
+	respondWithJSON(w, nil, 200)
 }
 
 func ListShares(w http.ResponseWriter, r *http.Request) {
 
-	user := utils.GetRequestUser(r)
+	userID := fetchUserID(w, r)
 
-	shares := db.ListShares(user.ID, r.Context())
+	shares := db.ListShares(userID, r.Context())
 
 	if shares == nil {
 		respondWithError(w, "No shares found!", 404)
@@ -62,9 +62,9 @@ func ListShares(w http.ResponseWriter, r *http.Request) {
 
 func ListSharedWithMe(w http.ResponseWriter, r *http.Request) {
 
-	user := utils.GetRequestUser(r)
+	userID := fetchUserID(w, r)
 
-	shares := db.ListSharedWithMe(user.ID, r.Context())
+	shares := db.ListSharedWithMe(userID, r.Context())
 
 	if shares == nil {
 		respondWithError(w, "No shares found!", 404)

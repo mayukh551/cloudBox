@@ -14,6 +14,13 @@ func respondWithJSON(w http.ResponseWriter, payload any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 
+	if payload == nil {
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+		})
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"data":    payload,
