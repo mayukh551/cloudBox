@@ -14,10 +14,11 @@ func CreateFile(data models.CreateFile, ctxt context.Context) error {
 	defer cancel()
 
 	_, err := DB.ExecContext(queryCtxt,
-		`INSERT INTO files (id, name, type, size, userID)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO files (id, name, path, type, size, userID)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
 		data.ID,
-		data.Title,
+		data.Name,
+		data.Path,
 		data.Type,
 		data.Size,
 		data.UserID,
@@ -30,18 +31,39 @@ func CreateFile(data models.CreateFile, ctxt context.Context) error {
 	return nil
 }
 
-func ListFiles(userID string, ctxt context.Context) ([]models.FileList, error) {
+func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	_, err := DB.ExecContext(queryCtxt,
+		`UPDATE files
+		 SET path = $2, updatedAt = $3
+		 WHERE id = $1`,
+		data.ID,
+		data.Path,
+		data.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("error updating file entity: %w", err)
+	}
+
+	return nil
+}
+
+func ListFiles(userID string, path string, ctxt context.Context) ([]models.FileList, error) {
 	var files []models.FileList
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
 	rows, err := DB.QueryContext(queryCtxt,
-		`SELECT id, name, type, size, userID, createdAt, updatedAt
+		`SELECT id, name, type, path, size, userID, createdAt, updatedAt
 		 FROM files
-		 WHERE userID = $1
+		 WHERE userID = $1 AND path = $2
 		 ORDER BY updatedAt DESC`,
 		userID,
+		path,
 	)
 
 	if err != nil {
@@ -54,8 +76,9 @@ func ListFiles(userID string, ctxt context.Context) ([]models.FileList, error) {
 		var file models.FileList
 		if err := rows.Scan(
 			&file.ID,
-			&file.Title,
+			&file.Name,
 			&file.Type,
+			&file.Path,
 			&file.Size,
 			&file.UserID,
 			&file.CreatedAt,
@@ -74,6 +97,27 @@ func ListFiles(userID string, ctxt context.Context) ([]models.FileList, error) {
 	return files, nil
 }
 
+func CheckIfFileNameExists(filename string, ctxt context.Context) (bool, error) {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 10*time.Second)
+	defer cancel()
+
+	var exists bool
+
+	if err := DB.QueryRowContext(queryCtxt,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM files
+			WHERE name = $1
+		)`,
+		filename).Scan(&exists); err != nil {
+		return false, err
+	}
+
+	return exists, nil
+
+}
+
 func GetFileByID(fileID string, ctxt context.Context) fileEntity {
 	var file fileEntity
 
@@ -87,7 +131,7 @@ func GetFileByID(fileID string, ctxt context.Context) fileEntity {
 		fileID,
 	).Scan(
 		&file.ID,
-		&file.Title,
+		&file.Name,
 		&file.Type,
 		&file.Size,
 		&file.UserID,
@@ -102,19 +146,20 @@ func GetFileByID(fileID string, ctxt context.Context) fileEntity {
 	return file
 }
 
-func UpdateFile(fileID string, data models.CreateFile, ctxt context.Context) error {
+func UpdateFile(data models.CreateFile, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
 	_, err := DB.ExecContext(queryCtxt,
 		`UPDATE files
-		 SET name = $2, type = $3, size = $4, updatedAt = $5
+		 SET name = $2, type = $3, size = $4, updatedAt = $5, path = $6
 		 WHERE id = $1`,
 		data.ID,
-		data.Title,
+		data.Name,
 		data.Type,
 		data.Size,
 		data.UpdatedAt,
+		data.Path,
 	)
 
 	if err != nil {
@@ -133,7 +178,7 @@ func UpdateFileName(data models.UpdateFileNamePayload, ctxt context.Context) err
 		 SET name = $2, updatedAt = $3
 		 WHERE id = $1`,
 		data.Id,
-		data.Title,
+		data.Name,
 		data.UpdatedAt,
 	)
 

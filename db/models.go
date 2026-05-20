@@ -11,10 +11,10 @@ type userEntity struct {
 
 type fileEntity struct {
 	ID        string `db:"id"`
-	Title     string `db:"name"`
+	Name      string `db:"name"`
 	Type      string `db:"type"`
 	Size      string `db:"size"`
-	Url       string `db:"url"`
+	Path      string `db:"path"`
 	UserID    string `db:"userID"`
 	CreatedAt string `db:"createdAt"`
 	UpdatedAt string `db:"updatedAt"`

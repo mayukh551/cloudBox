@@ -49,6 +49,7 @@ func Init() error {
 		CREATE TABLE IF NOT EXISTS files (
 			id VARCHAR(255) PRIMARY KEY,
 			name VARCHAR(255) NOT NULL,
+			path VARCHAR(255) DEFAULT '',
 			type VARCHAR(50) NOT NULL,
 			size BIGINT DEFAULT 0,
 			userID VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -60,8 +61,11 @@ func Init() error {
 	_, err = DB.Exec(fileTableQuery)
 
 	if err != nil {
-		fmt.Println("Failed to create table for users!", err)
+		fmt.Println("Failed to create table for files!", err)
 	}
+
+	// Ensure path column exists (Migration)
+	_, _ = DB.Exec(`ALTER TABLE files ADD COLUMN IF NOT EXISTS path VARCHAR(255) DEFAULT '';`)
 
 	// create share table if does not exist
 	shareTableQuery := `

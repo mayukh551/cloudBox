@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"os"
+	"path"
+	"regexp"
 	"sync"
 	"time"
 
@@ -44,10 +47,18 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
-
-	files, err := db.ListFiles(userID, r.Context())
+	path := r.URL.Query().Get("path")
+	files, err := db.ListFiles(userID, path, r.Context())
 
 	fmt.Println(files)
+
+	// fix filenames
+	for i := 0; i < len(files); i++ {
+		filename := files[i].Name
+		var copyPrefixRegex = regexp.MustCompile(`^Copy_\d+_`)
+		original := copyPrefixRegex.ReplaceAllString(filename, "")
+		files[i].Name = original
+	}
 
 	if err != nil {
 		respondWithError(w, "failed to list objects", http.StatusInternalServerError)
@@ -80,18 +91,13 @@ func (h *S3Handler) Rename(w http.ResponseWriter, r *http.Request) {
 	oldFileKey := userID + "/" + data.OldTitle
 
 	// Copy
-	_, err = h.s3.CopyObject(context.TODO(), &s3.CopyObjectInput{
-		Bucket:     aws.String(h.bucketName),
-		CopySource: aws.String(oldFileKey),
-		Key:        aws.String(data.Title),
-	})
-
-	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+	if err := utils.CopyObject(h.s3, h.bucketName, oldFileKey, data.Name); err != nil {
+		respondWithError(w, "Error while copying file in s3 bucket", http.StatusInternalServerError)
+		return
 	}
 
 	// Delete old file
-	if err = utils.DeleteObject(h.s3, h.bucketName, oldFileKey); err != nil {
+	if err := utils.DeleteObject(h.s3, h.bucketName, oldFileKey); err != nil {
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 	}
 
@@ -133,6 +139,62 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// creates a new record in files Table separately without any upload
+func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	var data models.CreateFolderPayload
+	json.NewDecoder(r.Body).Decode(&data)
+	folderPath := path.Clean(data.Path)
+	folderName := path.Base(folderPath)
+	parentPath := path.Dir(folderPath)
+	if parentPath == "." || parentPath == "/" {
+		parentPath = ""
+	}
+
+	err := db.CreateFile(
+		models.CreateFile{
+			ID:     utils.GenerateUUID(),
+			Name:   folderName,
+			Path:   parentPath,
+			Type:   "Folder",
+			Size:   0, // size will be updated later via a separate endpoint after new upload is complete
+			UserID: userID,
+		},
+		r.Context(),
+	)
+
+	if err != nil {
+		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError)
+		return
+	}
+
+	respondWithJSON(w, "Folder created successfully", http.StatusOK)
+}
+
+// updates the path of a file/folder in the database
+func (h *S3Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
+
+	var data models.MoveFilePayload
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		return
+	}
+
+	data.UpdatedAt = fmt.Sprintf("%d", time.Now())
+
+	if err := db.UpdatePath(data, r.Context()); err != nil {
+		respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
+		return
+	}
+
+	respondWithJSON(w, "File moved successfully", http.StatusOK)
+}
+
+// creates a presign URL for upload and sends it back to frontend.
+// For already existing file, it updates the path first (This only happens if an empty folder existed with no assets inside)
+// and then creates a presign URL for new upload and send back to the frontend
 func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
@@ -140,7 +202,43 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	var presignPayload models.PreSignedBody
 	json.NewDecoder(r.Body).Decode(&presignPayload)
 
-	key := userID + "/" + presignPayload.Filename
+	// deconstruct fields from struct
+	path := presignPayload.Path
+	filename := presignPayload.Filename
+	fileID := presignPayload.FileID
+	size := presignPayload.Size
+
+	// if FileID is provided, then we are updating path
+	if presignPayload.FileID != "" {
+		if err := db.UpdateFile(
+			models.CreateFile{
+				ID:        fileID,
+				Name:      filename,
+				Path:      path,
+				UpdatedAt: fmt.Sprintf("%d", time.Now()),
+				Size:      size,
+				Type:      "File",
+			},
+			r.Context(),
+		); err != nil {
+			respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	ifExists, err := db.CheckIfFileNameExists(presignPayload.Filename, r.Context())
+
+	if err != nil {
+		fmt.Println("Failed to check if file exists", err)
+		respondWithError(w, "Failed to check if file exists", http.StatusInternalServerError)
+		return
+	}
+
+	if ifExists == true {
+		filename = fmt.Sprintf("Copy_%d_%s", rand.IntN(9000)+1000, filename)
+	}
+
+	key := userID + "/" + filename
 
 	url, err := utils.PresignPutObject(h.s3, h.bucketName, key, presignPayload.ContentType)
 
@@ -149,18 +247,17 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = db.CreateFile(
+	if err = db.CreateFile(
 		models.CreateFile{
 			ID:     utils.GenerateUUID(),
-			Title:  presignPayload.Filename,
+			Name:   filename,
+			Path:   path,
 			Type:   "file",
-			Size:   presignPayload.Size, // size will be updated later via a separate endpoint after upload is complete
+			Size:   size, // size will be updated later via a separate endpoint after upload is complete
 			UserID: userID,
 		},
 		r.Context(),
-	)
-
-	if err != nil {
+	); err != nil {
 		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError)
 		return
 	}
@@ -172,6 +269,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Update a single file record with updated fields and must have FileID
 func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 
 	var updatedData models.CreateFile
@@ -179,7 +277,7 @@ func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	// TODO: field validation
 	json.NewDecoder(r.Body).Decode(&updatedData)
 
-	if err := db.UpdateFile(updatedData.ID, updatedData, r.Context()); err != nil {
+	if err := db.UpdateFile(updatedData, r.Context()); err != nil {
 		respondWithError(w, "Error while updating file metadata", http.StatusInternalServerError)
 		return
 	}
@@ -188,6 +286,7 @@ func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Delete File from files table and from s3 bucket
 func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)

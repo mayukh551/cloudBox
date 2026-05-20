@@ -17,10 +17,6 @@ func getObject(s3Client *s3.Client) {
 
 }
 
-func CopyObject(s3Client *s3.Client) {
-
-}
-
 func DeleteObject(s3Client *s3.Client, bucket string, key string) error {
 	_, err := s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
@@ -67,4 +63,14 @@ func PresignGetObject(s3Client *s3.Client, bucket string, key string) (string, e
 
 	return s3PresignData.URL, nil
 
+}
+
+func CopyObject(s3Client *s3.Client, bucket string, sourceKey string, destinationKey string) error {
+	_, err := s3Client.CopyObject(context.TODO(), &s3.CopyObjectInput{
+		Bucket:     aws.String(bucket),
+		CopySource: aws.String(bucket + "/" + sourceKey),
+		Key:        aws.String(destinationKey),
+	})
+
+	return err
 }
