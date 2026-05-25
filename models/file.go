@@ -61,11 +61,13 @@ type PreSignedResponse struct {
 }
 
 type MoveFilePayload struct {
-	ID        string `json:"id" validate:"required"`
-	Path      string `json:"folderName" validate:"required"`
-	UpdatedAt string `json:"updatedAt"`
+	ID            string `json:"id" validate:"required"`
+	Path          string `json:"path" validate:"required"`
+	UpdatedAt     string `json:"updatedAt"`
+	EmptyFolderID string `json:"emptyFolderID"`
 }
 
 type CreateFolderPayload struct {
-	Path string `json:"folderName" validate:"required"`
+	Name string `json:"folderName" validate:"required"`
+	Path string `json:"path" validate:"required"`
 }

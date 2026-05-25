@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"path"
 	"regexp"
 	"sync"
 	"time"
@@ -47,10 +46,7 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
-	path := r.URL.Query().Get("path")
-	files, err := db.ListFiles(userID, path, r.Context())
-
-	fmt.Println(files)
+	files, err := db.ListFiles(userID, r.Context())
 
 	// fix filenames
 	for i := 0; i < len(files); i++ {
@@ -146,18 +142,14 @@ func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 	var data models.CreateFolderPayload
 	json.NewDecoder(r.Body).Decode(&data)
-	folderPath := path.Clean(data.Path)
-	folderName := path.Base(folderPath)
-	parentPath := path.Dir(folderPath)
-	if parentPath == "." || parentPath == "/" {
-		parentPath = ""
-	}
+	folderName := data.Name
+	path := data.Path
 
 	err := db.CreateFile(
 		models.CreateFile{
 			ID:     utils.GenerateUUID(),
 			Name:   folderName,
-			Path:   parentPath,
+			Path:   path,
 			Type:   "Folder",
 			Size:   0, // size will be updated later via a separate endpoint after new upload is complete
 			UserID: userID,
@@ -173,6 +165,36 @@ func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, "Folder created successfully", http.StatusOK)
 }
 
+// DeleteFolder takes folder name from req query
+// searches the path column that contains this folder name as substring
+// if found it deletes it
+
+// Example:
+// Folder1
+// ├── Folder2
+// │   ├── fileA.txt
+// │   └── SubFolder1
+// │       └── fileB.txt
+// └── Folder3
+//     └── fileC.txt
+
+// if user requests to delte Folder2, files like fileA.txt, SubFolder1, fileB.txt will be deleted as they come under Folder2
+func (h *S3Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	folderName := r.URL.Query().Get("folderName")
+	id := r.URL.Query().Get("id") // ID of the folder
+
+	if err := db.DeleteFolder(folderName, id, userID, r.Context()); err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondWithJSON(w, "Files and Folder containing it is successfully deleted!", http.StatusOK)
+
+}
+
 // updates the path of a file/folder in the database
 func (h *S3Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 
@@ -182,7 +204,7 @@ func (h *S3Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data.UpdatedAt = fmt.Sprintf("%d", time.Now())
+	data.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	if err := db.UpdatePath(data, r.Context()); err != nil {
 		respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
@@ -208,7 +230,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	fileID := presignPayload.FileID
 	size := presignPayload.Size
 
-	// if FileID is provided, then we are updating path
+	// if FileID is provided, then we are updating path and filename
 	if presignPayload.FileID != "" {
 		if err := db.UpdateFile(
 			models.CreateFile{
@@ -221,12 +243,13 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			},
 			r.Context(),
 		); err != nil {
+			fmt.Print("Error while updating file path", err)
 			respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	ifExists, err := db.CheckIfFileNameExists(presignPayload.Filename, r.Context())
+	ifFileExists, err := db.CheckIfFileNameExists(presignPayload.Filename, path, r.Context())
 
 	if err != nil {
 		fmt.Println("Failed to check if file exists", err)
@@ -234,7 +257,19 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ifExists == true {
+	if ifFileExists["onlyPathExists"] == false {
+		respondWithError(w, fmt.Sprintf("This path %s does not exist.", path), http.StatusBadRequest)
+		return
+	}
+
+	// if filename with the same already exists, then return error, two or more files with same name cannot be stored in the same path
+	if ifFileExists["samePathExists"] == true {
+		respondWithError(w, fmt.Sprintf("Another filename with %s already exists.", filename), http.StatusBadRequest)
+		return
+	}
+
+	// to handle duplicate names in the same path for multiple files in s3
+	if ifFileExists["diffPathExists"] == true {
 		filename = fmt.Sprintf("Copy_%d_%s", rand.IntN(9000)+1000, filename)
 	}
 

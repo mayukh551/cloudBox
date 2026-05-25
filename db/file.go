@@ -35,6 +35,8 @@ func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	fmt.Println(data.EmptyFolderID, data.ID, data.Path)
+
 	_, err := DB.ExecContext(queryCtxt,
 		`UPDATE files
 		 SET path = $2, updatedAt = $3
@@ -51,7 +53,7 @@ func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
 	return nil
 }
 
-func ListFiles(userID string, path string, ctxt context.Context) ([]models.FileList, error) {
+func ListFiles(userID string, ctxt context.Context) ([]models.FileList, error) {
 	var files []models.FileList
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
@@ -59,11 +61,8 @@ func ListFiles(userID string, path string, ctxt context.Context) ([]models.FileL
 
 	rows, err := DB.QueryContext(queryCtxt,
 		`SELECT id, name, type, path, size, userID, createdAt, updatedAt
-		 FROM files
-		 WHERE userID = $1 AND path = $2
-		 ORDER BY updatedAt DESC`,
+		 FROM files WHERE userID = $1 ORDER BY updatedAt DESC`,
 		userID,
-		path,
 	)
 
 	if err != nil {
@@ -97,25 +96,30 @@ func ListFiles(userID string, path string, ctxt context.Context) ([]models.FileL
 	return files, nil
 }
 
-func CheckIfFileNameExists(filename string, ctxt context.Context) (bool, error) {
-
+func CheckIfFileNameExists(filename string, path string, ctxt context.Context) (map[string]bool, error) {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 10*time.Second)
 	defer cancel()
 
-	var exists bool
+	var samePathExists, diffPathExists, onlyPathExists bool
 
-	if err := DB.QueryRowContext(queryCtxt,
-		`SELECT EXISTS (
-			SELECT 1
-			FROM files
-			WHERE name = $1
-		)`,
-		filename).Scan(&exists); err != nil {
-		return false, err
+	err := DB.QueryRowContext(queryCtxt,
+		`SELECT
+			EXISTS(SELECT 1 FROM files WHERE name = $1 AND path = $2)  AS same_path_exists,
+			EXISTS(SELECT 1 FROM files WHERE name = $1 AND path != $2) AS diff_path_exists,
+			EXISTS(SELECT 1 FROM files WHERE path = $2) AS onlyPathExists
+		`,
+		filename, path,
+	).Scan(&samePathExists, &diffPathExists, &onlyPathExists)
+
+	if err != nil {
+		return nil, err
 	}
 
-	return exists, nil
-
+	return map[string]bool{
+		"samePathExists": samePathExists,
+		"diffPathExists": diffPathExists,
+		"onlyPathExists": onlyPathExists,
+	}, nil
 }
 
 func GetFileByID(fileID string, ctxt context.Context) fileEntity {
@@ -200,6 +204,32 @@ func DeleteFile(fileID string, ctxt context.Context) error {
 
 	if err != nil {
 		return fmt.Errorf("error deleting file entity: %w", err)
+	}
+
+	return nil
+}
+
+func DeleteFolder(folderName string, id string, userID string, ctxt context.Context) error {
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	_, err := DB.ExecContext(queryCtxt,
+		`DELETE FROM files WHERE path ~ ('(^|/)' || $1 || '(/|$)') AND userID = $2`,
+		folderName, userID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("error deleting files that are stored inside the folder", err)
+	}
+
+	_, err = DB.ExecContext(queryCtxt,
+		`DELETE FROM files WHERE id = $1`,
+		id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("error deleting the selected folder", err)
 	}
 
 	return nil

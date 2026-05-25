@@ -67,8 +67,6 @@ func Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		fmt.Println(claims.ID, claims.Email)
-
 		user := RequestUser{
 			ID:    claims.ID,
 			Email: claims.Email,
