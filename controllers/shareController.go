@@ -14,12 +14,12 @@ func Share(w http.ResponseWriter, r *http.Request) {
 	var data models.FileShare
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
 	if err := utils.ValidateStruct(data); err != nil {
-		respondWithError(w, err.Error(), http.StatusBadRequest)
+		respondWithError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
@@ -28,7 +28,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 	sharedTo, err := db.GetUserByEmail(data.Email, r.Context())
 
 	if err != nil {
-		respondWithError(w, "User not found!", 404)
+		respondWithError(w, "User not found!", 404, err)
 		return
 	}
 
@@ -39,7 +39,7 @@ func Share(w http.ResponseWriter, r *http.Request) {
 	}, r.Context())
 
 	if err != nil {
-		respondWithError(w, err.Error(), 500)
+		respondWithError(w, err.Error(), 500, err)
 		return
 	}
 
@@ -53,7 +53,7 @@ func ListShares(w http.ResponseWriter, r *http.Request) {
 	shares := db.ListShares(userID, r.Context())
 
 	if shares == nil {
-		respondWithError(w, "No shares found!", 404)
+		respondWithError(w, "No shares found!", 404, nil)
 		return
 	}
 
@@ -67,7 +67,7 @@ func ListSharedWithMe(w http.ResponseWriter, r *http.Request) {
 	shares := db.ListSharedWithMe(userID, r.Context())
 
 	if shares == nil {
-		respondWithError(w, "No shares found!", 404)
+		respondWithError(w, "No shares found!", 404, nil)
 		return
 	}
 

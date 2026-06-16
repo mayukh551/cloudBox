@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"reflect"
 )
 
 func respondWithJSON(w http.ResponseWriter, payload any, code int) {
@@ -27,7 +29,15 @@ func respondWithJSON(w http.ResponseWriter, payload any, code int) {
 	})
 }
 
-func respondWithError(w http.ResponseWriter, message any, code int) {
+func respondWithError(w http.ResponseWriter, message any, code int, err error) {
+
+	if message == nil || reflect.TypeOf(message).Kind() != reflect.String {
+		fmt.Println("message not be nil and has to be string type")
+		message = ""
+	}
+
+	fmt.Println("\n[Error Message] => ", (message))
+	fmt.Println("[Raw Error] => ", err, "\n")
 
 	if http.StatusText(code) == "" {
 		code = http.StatusInternalServerError

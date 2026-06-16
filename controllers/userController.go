@@ -14,19 +14,19 @@ func FindUserByEmail(w http.ResponseWriter, r *http.Request) {
 	var user models.UserEmail
 
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
 	if err := utils.ValidateStruct(user); err != nil {
-		respondWithError(w, err.Error(), http.StatusBadRequest)
+		respondWithError(w, err.Error(), http.StatusBadRequest, err)
 		return
 	}
 
 	foundUser, err := db.GetUserByEmail(user.Email, r.Context())
 
 	if err != nil {
-		respondWithError(w, "User not found!", http.StatusNotFound)
+		respondWithError(w, "User not found!", http.StatusNotFound, err)
 		return
 	}
 

@@ -28,3 +28,14 @@ type shareEntity struct {
 	CreatedAt string `db:"createdAt"`
 	UpdatedAt string `db:"updatedAt"`
 }
+
+// why create a separate entity for marking stars to files or folders?
+// - A file owned by the user or shared to another user can be starred by either user
+// - if we create a separate column on fileEntity for star, then how can we track which is file is starred by which user,
+// - since in fileEntity a file is already tied to a single user
+// - so fileID and userID mapping must be unique for each row on starEntity
+type starFileEntity struct {
+	FileID    string `db:"fileID"`
+	UserID    string `db:"userID"`
+	CreatedAt string `db:"createdAt"`
+}

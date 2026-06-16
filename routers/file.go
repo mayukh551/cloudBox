@@ -27,6 +27,8 @@ func fileRoutes(api *mux.Router) error {
 	file.HandleFunc("/move", h.MoveFile).Methods("PUT")
 	file.HandleFunc("/createFolder", h.CreateFolder).Methods("POST")
 	file.HandleFunc("/deleteFolder", h.DeleteFolder).Methods("DELETE")
+	file.HandleFunc("/star", h.StarFileOrFolder).Methods("POST")
+	file.HandleFunc("/get/stars", h.GetStarFiles).Methods("GET")
 
 	return nil
 }

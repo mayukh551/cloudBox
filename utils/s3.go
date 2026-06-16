@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"time"
 
@@ -22,6 +23,10 @@ func DeleteObject(s3Client *s3.Client, bucket string, key string) error {
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
+
+	if err != nil {
+		fmt.Printf("Error while deleting object from s3 %w", err)
+	}
 
 	return err
 }

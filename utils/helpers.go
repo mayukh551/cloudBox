@@ -110,3 +110,7 @@ func LoadAWSConfig() (*s3.Client, error) {
 
 	return svc, nil
 }
+
+func GetCurrentTime() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}

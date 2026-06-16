@@ -36,7 +36,7 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 	userID, err := utils.GetUserID(r)
 
 	if err != nil || userID == "" {
-		respondWithError(w, err.Error(), http.StatusUnauthorized)
+		respondWithError(w, err.Error(), http.StatusUnauthorized, err)
 		return ""
 	}
 
@@ -49,15 +49,20 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 	files, err := db.ListFiles(userID, r.Context())
 
 	// fix filenames
-	for i := 0; i < len(files); i++ {
+	for i := range files {
+		// extract filename
 		filename := files[i].Name
+
+		// get rid of duplicate prefixes
 		var copyPrefixRegex = regexp.MustCompile(`^Copy_\d+_`)
 		original := copyPrefixRegex.ReplaceAllString(filename, "")
+
+		// update filename
 		files[i].Name = original
 	}
 
 	if err != nil {
-		respondWithError(w, "failed to list objects", http.StatusInternalServerError)
+		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
 		return
 	}
 
@@ -71,30 +76,35 @@ func (h *S3Handler) Rename(w http.ResponseWriter, r *http.Request) {
 
 	var data models.UpdateFileNamePayload
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
 	// update filename on table
-	data.UpdatedAt = time.Now().Format(time.RFC3339) // TODO: need to recheck this part
+	data.UpdatedAt = utils.GetCurrentTime()
 	err := db.UpdateFileName(data, r.Context())
 
 	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
+		return
 	}
 
 	// update file on s3
 	oldFileKey := userID + "/" + data.OldTitle
+	newFileKey := userID + "/" + data.Name
+
+	fmt.Println(oldFileKey, newFileKey)
 
 	// Copy
-	if err := utils.CopyObject(h.s3, h.bucketName, oldFileKey, data.Name); err != nil {
-		respondWithError(w, "Error while copying file in s3 bucket", http.StatusInternalServerError)
+	if err := utils.CopyObject(h.s3, h.bucketName, oldFileKey, newFileKey); err != nil {
+		respondWithError(w, "Error while copying file in s3 bucket!", http.StatusInternalServerError, err)
 		return
 	}
 
 	// Delete old file
 	if err := utils.DeleteObject(h.s3, h.bucketName, oldFileKey); err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		respondWithError(w, "Failed to delete files from cloud!", http.StatusInternalServerError, err)
+		return
 	}
 
 	respondWithJSON(w, "File renamed successfully", http.StatusOK)
@@ -108,13 +118,13 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	var data map[string]any
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
 	fileKey := data["file"].(string)
 	if fileKey == "" {
-		respondWithError(w, "missing 'file' query parameter", http.StatusBadRequest)
+		respondWithError(w, "missing 'file' query parameter", http.StatusBadRequest, nil)
 		return
 	}
 
@@ -124,7 +134,7 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	url, err := utils.PresignGetObject(h.s3, h.bucketName, fileKey)
 
 	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
 		return
 	}
 
@@ -141,7 +151,11 @@ func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	userID := fetchUserID(w, r)
 
 	var data models.CreateFolderPayload
-	json.NewDecoder(r.Body).Decode(&data)
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusInternalServerError, nil)
+		return
+	}
+
 	folderName := data.Name
 	path := data.Path
 
@@ -158,7 +172,7 @@ func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError)
+		respondWithError(w, "Error while creating folder record in database", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -187,7 +201,7 @@ func (h *S3Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id") // ID of the folder
 
 	if err := db.DeleteFolder(folderName, id, userID, r.Context()); err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
 		return
 	}
 
@@ -200,14 +214,14 @@ func (h *S3Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 
 	var data models.MoveFilePayload
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
-	data.UpdatedAt = time.Now().Format(time.RFC3339)
+	data.UpdatedAt = utils.GetCurrentTime()
 
 	if err := db.UpdatePath(data, r.Context()); err != nil {
-		respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
+		respondWithError(w, "Error while updating file path", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -222,7 +236,11 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	userID := fetchUserID(w, r)
 
 	var presignPayload models.PreSignedBody
-	json.NewDecoder(r.Body).Decode(&presignPayload)
+
+	if err := json.NewDecoder(r.Body).Decode(&presignPayload); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusInternalServerError, nil)
+		return
+	}
 
 	// deconstruct fields from struct
 	path := presignPayload.Path
@@ -243,8 +261,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			},
 			r.Context(),
 		); err != nil {
-			fmt.Print("Error while updating file path", err)
-			respondWithError(w, "Error while updating file path", http.StatusInternalServerError)
+			respondWithError(w, "Error while updating file path", http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -252,19 +269,18 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	ifFileExists, err := db.CheckIfFileNameExists(presignPayload.Filename, path, r.Context())
 
 	if err != nil {
-		fmt.Println("Failed to check if file exists", err)
-		respondWithError(w, "Failed to check if file exists", http.StatusInternalServerError)
+		respondWithError(w, "Failed to check if file exists", http.StatusInternalServerError, err)
 		return
 	}
 
-	if ifFileExists["onlyPathExists"] == false {
-		respondWithError(w, fmt.Sprintf("This path %s does not exist.", path), http.StatusBadRequest)
-		return
-	}
+	// if ifFileExists["onlyPathExists"] == false {
+	// 	respondWithError(w, fmt.Sprintf("This path %s does not exist.", path), http.StatusBadRequest, nil)
+	// 	return
+	// }
 
 	// if filename with the same already exists, then return error, two or more files with same name cannot be stored in the same path
 	if ifFileExists["samePathExists"] == true {
-		respondWithError(w, fmt.Sprintf("Another filename with %s already exists.", filename), http.StatusBadRequest)
+		respondWithError(w, fmt.Sprintf("Another filename with %s already exists.", filename), http.StatusBadRequest, nil)
 		return
 	}
 
@@ -278,7 +294,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	url, err := utils.PresignPutObject(h.s3, h.bucketName, key, presignPayload.ContentType)
 
 	if err != nil {
-		respondWithError(w, "Error while creating a presigned URL", http.StatusInternalServerError)
+		respondWithError(w, "Error while creating a presigned URL", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -293,7 +309,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		},
 		r.Context(),
 	); err != nil {
-		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError)
+		respondWithError(w, "Error while creating file record in database", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -309,11 +325,13 @@ func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 
 	var updatedData models.CreateFile
 
-	// TODO: field validation
-	json.NewDecoder(r.Body).Decode(&updatedData)
+	if err := json.NewDecoder(r.Body).Decode(&updatedData); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusInternalServerError, nil)
+		return
+	}
 
 	if err := db.UpdateFile(updatedData, r.Context()); err != nil {
-		respondWithError(w, "Error while updating file metadata", http.StatusInternalServerError)
+		respondWithError(w, "Error while updating file metadata", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -330,13 +348,13 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
-		respondWithError(w, "Error while decoding JSON", http.StatusBadRequest)
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
 		return
 	}
 
 	files := data
 	if len(files) == 0 {
-		respondWithError(w, "'files' field cannot be empty", http.StatusBadRequest)
+		respondWithError(w, "'files' field cannot be empty", http.StatusBadRequest, err)
 		return
 	}
 
@@ -345,7 +363,6 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	var errorFileNames []string
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 
 	for _, file := range files {
 		wg.Add(1)
@@ -359,14 +376,12 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 			})
 
 			if err != nil {
-				mu.Lock()
 				errorFileNames = append(errorFileNames, file.Key)
-				mu.Unlock()
 			}
 
 			// delete from Files Table
 			if err := db.DeleteFile(file.Id, r.Context()); err != nil {
-				respondWithError(w, "Failed to delete file from db", http.StatusInternalServerError)
+				respondWithError(w, "Failed to delete file from db", http.StatusInternalServerError, err)
 			}
 		}()
 	}
@@ -374,8 +389,63 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	if len(errorFileNames) > 0 {
-		respondWithError(w, errorFileNames, http.StatusInternalServerError)
+		respondWithError(w, errorFileNames, http.StatusInternalServerError, err)
 		return
 	}
+
 	respondWithJSON(w, fmt.Sprintf("File(s) Deleted Successfully!"), http.StatusOK)
+}
+
+func (h *S3Handler) StarFileOrFolder(w http.ResponseWriter, r *http.Request) {
+
+	// type
+	// name
+
+	// if type file, then go
+	// if type folder, then folder name
+
+	var data models.StarFilePayload
+
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusInternalServerError, err)
+		return
+	}
+
+	userID := fetchUserID(w, r)
+	var wg sync.WaitGroup
+
+	var err error
+
+	for i := 0; i < len(data.IDs); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err = db.AddStar(data.IDs[i], userID, r.Context())
+		}()
+	}
+
+	if err != nil {
+		respondWithError(w, "Error while saving file as favourite.", 500, err)
+		return
+	}
+
+	wg.Wait()
+
+	respondWithJSON(w, "File marked as favourite.", 200)
+
+}
+
+func (h *S3Handler) GetStarFiles(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	stars, err := db.GetStarredFiles(userID, r.Context())
+
+	if err != nil {
+		respondWithError(w, "Failed to get starred files!", http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, stars, http.StatusOK)
+
 }

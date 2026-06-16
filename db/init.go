@@ -85,6 +85,23 @@ func Init() error {
 		fmt.Println("Failed to create table for share!", err)
 	}
 
+	// Create starFiles table if does not exist
+	starFileTableQuery := `
+		CREATE TABLE IF NOT EXISTS starFiles (
+			id VARCHAR(255) PRIMARY KEY,
+			fileID VARCHAR(255) NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+			userID VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (fileID, userID)
+		);
+	`
+
+	_, err = DB.Exec(starFileTableQuery)
+
+	if err != nil {
+		fmt.Println("Failed to create table for starFiles!", err)
+	}
+
 	println("Database initialized and tables created if they did not exist.")
 
 	return nil
