@@ -1,17 +1,31 @@
 package middlewares
 
-// import (
-// 	"github.com/redis/go-redis/v9"
-// )
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
 
-// func fileCache() {
-// 	client := redis.NewClient(&redis.Options{
-// 		Addr:     "localhost:6379",
-// 		Password: "", // no password
-// 		DB:       0,  // use default DB
-// 		Protocol: 2,
-// 	})
+	"github.com/mayukh551/cloudbox/models"
+	"github.com/mayukh551/cloudbox/utils"
+)
 
-// 	// pagination based storeage
-// 	// key: userID_page_limit
-// }
+func Cache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		var data models.FileListPayload
+		json.NewDecoder(r.Body).Decode(&data)
+
+		userID, err := utils.GetUserID(r)
+		if err != nil || userID == "" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": false,
+				"error":   "Failed to get userID.",
+			})
+		}
+
+		cacheKey := fmt.Sprintf("files:%s:%s:%d:%d", &userID)
+
+		utils.GetCacheObject(r.Context(), cacheKey)
+
+	})
+}

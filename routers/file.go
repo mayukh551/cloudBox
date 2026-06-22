@@ -19,7 +19,7 @@ func fileRoutes(api *mux.Router) error {
 
 	h := controllers.NewHandler(s3)
 
-	file.HandleFunc("/get-list", h.GetList).Methods("GET")
+	file.HandleFunc("/get-list", h.GetList).Methods("PUT")
 	file.HandleFunc("/download/{type}", h.DownloadFile).Methods("PUT")
 	file.HandleFunc("/upload/{type}", h.UploadFile).Methods("POST")
 	file.HandleFunc("/rename", h.Rename).Methods("PUT")
@@ -28,7 +28,7 @@ func fileRoutes(api *mux.Router) error {
 	file.HandleFunc("/createFolder", h.CreateFolder).Methods("POST")
 	file.HandleFunc("/deleteFolder", h.DeleteFolder).Methods("DELETE")
 	file.HandleFunc("/star", h.StarFileOrFolder).Methods("POST")
-	file.HandleFunc("/get/stars", h.GetStarFiles).Methods("GET")
+	file.HandleFunc("/unstar", h.UnStar).Methods("DELETE")
 
 	return nil
 }

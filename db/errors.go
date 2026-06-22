@@ -17,3 +17,8 @@ var ErrDeleteFiles = errors.New("Failed to delete files")
 var ErrDeleteFolder = errors.New("Failed to delete folder")
 
 var ErrInternal = errors.New("Something went wrong, we are checking...")
+
+// shares
+var ErrShareUnknown = errors.New("Failed to delete this shared file!")
+var ErrShareNotfound = errors.New("Shared file cannot be found!")
+var ErrShareFetch = errors.New("Error when loading your shared files!")

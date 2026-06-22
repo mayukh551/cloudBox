@@ -88,7 +88,6 @@ func Init() error {
 	// Create starFiles table if does not exist
 	starFileTableQuery := `
 		CREATE TABLE IF NOT EXISTS starFiles (
-			id VARCHAR(255) PRIMARY KEY,
 			fileID VARCHAR(255) NOT NULL REFERENCES files(id) ON DELETE CASCADE,
 			userID VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

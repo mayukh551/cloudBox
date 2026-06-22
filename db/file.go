@@ -62,17 +62,28 @@ func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
 	return nil
 }
 
-func ListFiles(userID string, ctxt context.Context) ([]models.FileList, error) {
+func ListFiles(userID string, searchTerm string, path string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
 	var files []models.FileList
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
-	rows, err := DB.QueryContext(queryCtxt,
-		`SELECT id, name, type, path, size, userID, createdAt, updatedAt
-		 FROM files WHERE userID = $1 ORDER BY updatedAt DESC`,
-		userID,
-	)
+	var rows *sql.Rows
+	var err error
+
+	skip := (page - 1) * limit
+
+	if searchTerm != "" {
+		rows, err = DB.QueryContext(queryCtxt,
+			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND name ~* $2 ORDER BY updatedAt DESC LIMIT $3`,
+			userID, searchTerm, limit,
+		)
+	} else {
+		rows, err = DB.QueryContext(queryCtxt,
+			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND path = $2 ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
+			userID, path, limit, skip,
+		)
+	}
 
 	if err != nil {
 		return nil, err
@@ -269,14 +280,20 @@ func DeleteFolder(folderName string, id string, userID string, ctxt context.Cont
 	return nil
 }
 
+// ----------------------------------------------------
+
+// Favourites API
+
 func AddStar(fileID string, userID string, ctxt context.Context) error {
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	fmt.Println(fileID, userID)
+
 	_, err := DB.ExecContext(queryCtxt, `
-		INSERT INTO starFiles (id, fileID, userID)
-		VALUES ($1, $2, $3)`,
+		INSERT INTO starFiles (fileID, userID)
+		VALUES ($1, $2)`,
 		fileID,
 		userID,
 	)
@@ -290,18 +307,39 @@ func AddStar(fileID string, userID string, ctxt context.Context) error {
 
 }
 
-func GetStarredFiles(userID string, ctxt context.Context) ([]models.StarredFile, error) {
+func RemoveStar(fileID string, userID string, ctxt context.Context) error {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	_, err := DB.ExecContext(queryCtxt, `
+		DELETE FROM starFiles WHERE fileID = $1 AND userID = $2`,
+		fileID,
+		userID,
+	)
+
+	if err != nil {
+		fmt.Println("error inserting new starred file, %w", err)
+		return ErrInternal
+	}
+
+	return nil
+}
+
+func GetStarredFiles(userID string, path string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	skip := (page - 1) * limit
+
 	rows, err := DB.QueryContext(queryCtxt, `
-		SELECT f.id, f.name, f.updatedAt, f.size, f.type
+		SELECT f.id, f.name, f.type, f.path, f.size, f.userID, f.createdAt, f.updatedAt
 		FROM starFiles sf
 		JOIN files f ON sf.fileID = f.id
-		WHERE sf.userID = $1
-		ORDER BY f.updatedAt DESC`,
-		userID,
+		WHERE sf.userID = $1 AND f.path = $2
+		ORDER BY f.updatedAt DESC
+		LIMIT $3 OFFSET $4`,
+		userID, path, limit, skip,
 	)
 
 	if err != nil {
@@ -310,19 +348,74 @@ func GetStarredFiles(userID string, ctxt context.Context) ([]models.StarredFile,
 
 	defer rows.Close()
 
-	var files []models.StarredFile
+	var files []models.FileList
 
 	for rows.Next() {
-		var file models.StarredFile
+		var file models.FileList
 		if err := rows.Scan(
 			&file.ID,
 			&file.Name,
-			&file.UpdatedAt,
-			&file.Size,
 			&file.Type,
+			&file.Path,
+			&file.Size,
+			&file.UserID,
+			&file.CreatedAt,
+			&file.UpdatedAt,
 		); err != nil {
 			return nil, ErrFileFetch
 		}
+
+		files = append(files, file)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, ErrFileFetch
+	}
+
+	return files, nil
+}
+
+func SearchFilesByName(userID string, pattern string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	skip := (page - 1) * limit
+	fmt.Println("Pattern", pattern, userID)
+
+	rows, err := DB.QueryContext(queryCtxt, `
+        SELECT id, name, type, path, size, userID, createdAt, updatedAt
+        FROM files
+        WHERE name ~* $1 AND userID = $2
+        ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
+		pattern, userID, limit, skip,
+	)
+
+	fmt.Println(sql.ErrNoRows)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var files []models.FileList
+
+	for rows.Next() {
+		fmt.Println("yo")
+		var file models.FileList
+		if err := rows.Scan(
+			&file.ID,
+			&file.Name,
+			&file.Type,
+			&file.Path,
+			&file.Size,
+			&file.UserID,
+			&file.CreatedAt,
+			&file.UpdatedAt,
+		); err != nil {
+			return nil, ErrFileFetch
+		}
+		fmt.Println(file.Name)
 		files = append(files, file)
 	}
 

@@ -46,27 +46,69 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
-	files, err := db.ListFiles(userID, r.Context())
 
-	// fix filenames
-	for i := range files {
-		// extract filename
-		filename := files[i].Name
+	var data models.FileListPayload
+	json.NewDecoder(r.Body).Decode(&data)
 
-		// get rid of duplicate prefixes
-		var copyPrefixRegex = regexp.MustCompile(`^Copy_\d+_`)
-		original := copyPrefixRegex.ReplaceAllString(filename, "")
+	if data.Search != "" {
 
-		// update filename
-		files[i].Name = original
+		// Handle folder names as well in the search
+		files, err := db.SearchFilesByName(userID, data.Search, data.Page, data.Limit, r.Context())
+
+		if err != nil {
+			respondWithJSON(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		respondWithJSON(w, files, http.StatusOK)
+
+	} else if data.Category == "general" {
+
+		files, err := db.ListFiles(userID, data.Search, data.Path, data.Page, data.Limit, r.Context())
+
+		if err != nil {
+			respondWithJSON(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// fix filenames
+		for i := range files {
+			// extract filename
+			filename := files[i].Name
+
+			// get rid of duplicate prefixes
+			var copyPrefixRegex = regexp.MustCompile(`^Copy_\d+_`)
+			original := copyPrefixRegex.ReplaceAllString(filename, "")
+
+			// update filename
+			files[i].Name = original
+		}
+
+		respondWithJSON(w, files, http.StatusOK)
+
+	} else if data.Category == "shared" {
+		shares, err := db.ListShares(userID, data.Path, data.Page, data.Limit, r.Context())
+
+		if err != nil {
+			respondWithError(w, "No shares found!", 404, nil)
+			return
+		}
+
+		respondWithJSON(w, shares, http.StatusOK)
+
+	} else if data.Category == "favorites" {
+		starredFiles, err := db.GetStarredFiles(userID, data.Path, data.Page, data.Limit, r.Context())
+
+		if err != nil {
+			respondWithError(w, "Failed to get starred files!", http.StatusInternalServerError, err)
+			return
+		}
+
+		respondWithJSON(w, starredFiles, http.StatusOK)
+
+	} else {
+		respondWithError(w, "Choose the right category to load files!", http.StatusInternalServerError, nil)
 	}
-
-	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
-		return
-	}
-
-	respondWithJSON(w, files, http.StatusOK)
 
 }
 
@@ -435,17 +477,16 @@ func (h *S3Handler) StarFileOrFolder(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *S3Handler) GetStarFiles(w http.ResponseWriter, r *http.Request) {
+func (h *S3Handler) UnStar(w http.ResponseWriter, r *http.Request) {
 
+	fileID := r.URL.Query().Get("fileID")
 	userID := fetchUserID(w, r)
 
-	stars, err := db.GetStarredFiles(userID, r.Context())
-
-	if err != nil {
-		respondWithError(w, "Failed to get starred files!", http.StatusInternalServerError, err)
+	if err := db.RemoveStar(fileID, userID, r.Context()); err != nil {
+		respondWithError(w, "Error while saving file as favourite.", 500, err)
 		return
 	}
 
-	respondWithJSON(w, stars, http.StatusOK)
+	respondWithJSON(w, "File removed from favourite.", 200)
 
 }

@@ -11,6 +11,7 @@ func shareRoutes(api *mux.Router) {
 	share.Use(middlewares.Authenticate)
 
 	share.HandleFunc("/create", controllers.Share).Methods("POST")
-	share.HandleFunc("/list", controllers.ListShares).Methods("GET")
-	share.HandleFunc("/list-with-me", controllers.ListSharedWithMe).Methods("GET")
+	share.HandleFunc("/remove-share", controllers.RemoveSharedFiles).Methods("DELETE")
+	// share.HandleFunc("/list", controllers.ListShares).Methods("GET")
+	// share.HandleFunc("/list-with-me", controllers.ListSharedWithMe).Methods("GET")
 }

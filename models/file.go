@@ -96,3 +96,11 @@ type StarredFile struct {
 	Size      int64     `json:"size"`
 	Type      string    `json:"contentType"`
 }
+
+type FileListPayload struct {
+	Search   string `json:"search"`
+	Path     string `json:"path"`
+	Category string `json:"category"`
+	Page     int    `json:"page"`
+	Limit    int    `json:"limit"`
+}

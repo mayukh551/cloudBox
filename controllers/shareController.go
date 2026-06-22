@@ -46,25 +46,39 @@ func Share(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, nil, 200)
 }
 
-func ListShares(w http.ResponseWriter, r *http.Request) {
+// func ListShares(w http.ResponseWriter, r *http.Request) {
 
-	userID := fetchUserID(w, r)
+// 	userID := fetchUserID(w, r)
 
-	shares := db.ListShares(userID, r.Context())
+// 	shares, err := db.ListShares(userID, r.Context())
 
-	if shares == nil {
-		respondWithError(w, "No shares found!", 404, nil)
-		return
-	}
+// 	if err != nil {
+// 		respondWithError(w, "No shares found!", 404, nil)
+// 		return
+// 	}
 
-	respondWithJSON(w, shares, 200)
-}
+// 	respondWithJSON(w, shares, 200)
+// }
 
-func ListSharedWithMe(w http.ResponseWriter, r *http.Request) {
+// func ListSharedWithMe(w http.ResponseWriter, r *http.Request) {
 
-	userID := fetchUserID(w, r)
+// 	userID := fetchUserID(w, r)
 
-	shares := db.ListSharedWithMe(userID, r.Context())
+// 	shares := db.ListSharedWithMe(userID, r.Context())
+
+// 	if shares == nil {
+// 		respondWithError(w, "No shares found!", 404, nil)
+// 		return
+// 	}
+
+// 	respondWithJSON(w, shares, 200)
+// }
+
+func RemoveSharedFiles(w http.ResponseWriter, r *http.Request) {
+
+	shareID := r.URL.Query().Get("shareID")
+
+	shares := db.RemoveSharedFile(shareID, r.Context())
 
 	if shares == nil {
 		respondWithError(w, "No shares found!", 404, nil)

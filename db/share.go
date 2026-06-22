@@ -29,60 +29,76 @@ func CreateShare(data models.ShareUser, ctxt context.Context) error {
 	return nil
 }
 
-func ListShares(userID string, ctxt context.Context) []models.ShareList {
+func ListShares(userID string, path string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
 
-	var shares []models.ShareList
+	var shares []models.FileList
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	skip := (page - 1) * limit
+
 	rows, err := DB.QueryContext(queryCtxt,
-		`SELECT id, sharedTo, sharedBy, fileID, updatedAt FROM shares WHERE sharedBy = $1`,
-		userID,
+		`SELECT * FROM files WHERE id in (
+			SELECT fileID FROM shares WHERE sharedTo = $1 AND path = $2
+		) ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
+		userID, path, limit, skip,
 	)
 
 	if err != nil {
-		return nil
+		return nil, ErrShareFetch
 	}
 
 	defer rows.Close()
 
 	for rows.Next() {
-		var share models.ShareList
-		if err := rows.Scan(&share.ID, &share.SharedTo, &share.SharedBy, &share.FileID, &share.ModifiedAt); err != nil {
-			return nil
+		var file models.FileList
+		if err := rows.Scan(
+			&file.ID,
+			&file.Name,
+			&file.Type,
+			&file.Path,
+			&file.Size,
+			&file.UserID,
+			&file.CreatedAt,
+			&file.UpdatedAt,
+		); err != nil {
+			return nil, ErrFileFetch
 		}
-		shares = append(shares, share)
+
+		shares = append(shares, file)
 	}
 
-	return shares
+	if err := rows.Err(); err != nil {
+		return nil, ErrShareFetch
+	}
+
+	return shares, nil
 }
 
-func ListSharedWithMe(userID string, ctxt context.Context) []models.ShareList {
-
-	var shares []models.ShareList
-
+func RemoveSharedFile(id string, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
-	rows, err := DB.QueryContext(queryCtxt,
-		`SELECT id, sharedTo, sharedBy, fileID, updatedAt FROM shares WHERE sharedTo = $1`,
-		userID,
+	result, err := DB.ExecContext(queryCtxt,
+		`DELETE FROM shares WHERE id = $1`,
+		id,
 	)
 
 	if err != nil {
-		return nil
+		return ErrShareNotfound
 	}
 
-	defer rows.Close()
+	rowsAffectd, err := result.RowsAffected()
 
-	for rows.Next() {
-		var share models.ShareList
-		if err := rows.Scan(&share.ID, &share.SharedTo, &share.SharedBy, &share.FileID, &share.ModifiedAt); err != nil {
-			return nil
-		}
-		shares = append(shares, share)
+	if err != nil {
+		return ErrInternal
 	}
 
-	return shares
+	if rowsAffectd == 0 {
+		return ErrShareNotfound
+	}
+
+	return nil
+
 }
