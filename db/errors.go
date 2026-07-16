@@ -15,6 +15,7 @@ var ErrFileOrPathNotFound = errors.New("Cannot find the file or path provided!")
 var ErrDeleteFilesInsideFolder = errors.New("error deleting files that are stored inside the folder!")
 var ErrDeleteFiles = errors.New("Failed to delete files")
 var ErrDeleteFolder = errors.New("Failed to delete folder")
+var ErrFileSize = errors.New("Error while calculating total size!")
 
 var ErrInternal = errors.New("Something went wrong, we are checking...")
 

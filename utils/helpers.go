@@ -12,7 +12,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/mayukh551/cloudbox/middlewares"
 	"github.com/mayukh551/cloudbox/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -81,7 +80,7 @@ func GenerateUUID() string {
 }
 
 func GetUserID(r *http.Request) (string, error) {
-	userCtxt, ok := r.Context().Value("user").(middlewares.RequestUser)
+	userCtxt, ok := r.Context().Value("user").(models.RequestUser)
 	if !ok {
 		return "", errors.New("user not found in req context")
 	}

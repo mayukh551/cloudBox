@@ -43,7 +43,7 @@ func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 	return userID
 }
 
-func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
+func GetList(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
@@ -110,6 +110,20 @@ func (h *S3Handler) GetList(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, "Choose the right category to load files!", http.StatusInternalServerError, nil)
 	}
 
+}
+
+func GetSize(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	totalSize, err := db.GetTotalSize(userID, r.Context())
+
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, totalSize, 200)
 }
 
 func (h *S3Handler) Rename(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +202,7 @@ func (h *S3Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // creates a new record in files Table separately without any upload
-func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
+func CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
@@ -235,7 +249,7 @@ func (h *S3Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 //     └── fileC.txt
 
 // if user requests to delte Folder2, files like fileA.txt, SubFolder1, fileB.txt will be deleted as they come under Folder2
-func (h *S3Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
+func DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 	userID := fetchUserID(w, r)
 
@@ -252,7 +266,7 @@ func (h *S3Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // updates the path of a file/folder in the database
-func (h *S3Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
+func MoveFile(w http.ResponseWriter, r *http.Request) {
 
 	var data models.MoveFilePayload
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -290,6 +304,18 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	fileID := presignPayload.FileID
 	size := presignPayload.Size
 
+	totalSize, err := db.GetTotalSize(userID, r.Context())
+	if err != nil {
+		respondWithError(w, "Error while getting total storage size", http.StatusInternalServerError, err)
+		return
+	}
+
+	const maxAllowedStorage = 1024 * 1024 * 1024 // 1GB
+	if (totalSize + size) > maxAllowedStorage {
+		respondWithError(w, "Storage limit exceeded: total usage cannot exceed 1GB", http.StatusBadRequest, nil)
+		return
+	}
+
 	// if FileID is provided, then we are updating path and filename
 	if presignPayload.FileID != "" {
 		if err := db.UpdateFile(
@@ -314,11 +340,6 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, "Failed to check if file exists", http.StatusInternalServerError, err)
 		return
 	}
-
-	// if ifFileExists["onlyPathExists"] == false {
-	// 	respondWithError(w, fmt.Sprintf("This path %s does not exist.", path), http.StatusBadRequest, nil)
-	// 	return
-	// }
 
 	// if filename with the same already exists, then return error, two or more files with same name cannot be stored in the same path
 	if ifFileExists["samePathExists"] == true {
@@ -363,7 +384,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update a single file record with updated fields and must have FileID
-func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
+func UpdateFile(w http.ResponseWriter, r *http.Request) {
 
 	var updatedData models.CreateFile
 
@@ -378,6 +399,30 @@ func (h *S3Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, "File Updated Successfully", http.StatusOK)
+
+}
+
+func MoveToTrash(w http.ResponseWriter, r *http.Request) {
+
+	var data models.TrashPayload
+
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
+		return
+	}
+
+	if len(data.Files) == 0 {
+		respondWithError(w, "no files provided", http.StatusBadRequest, nil)
+		return
+	}
+
+	if err := db.SetIsTrash(data.Files, r.Context()); err != nil {
+		respondWithError(w, "Error moving files to trash", http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, "Files moved to trash", http.StatusOK)
 
 }
 
@@ -438,7 +483,7 @@ func (h *S3Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, fmt.Sprintf("File(s) Deleted Successfully!"), http.StatusOK)
 }
 
-func (h *S3Handler) StarFileOrFolder(w http.ResponseWriter, r *http.Request) {
+func StarFileOrFolder(w http.ResponseWriter, r *http.Request) {
 
 	// type
 	// name
@@ -477,7 +522,7 @@ func (h *S3Handler) StarFileOrFolder(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *S3Handler) UnStar(w http.ResponseWriter, r *http.Request) {
+func UnStar(w http.ResponseWriter, r *http.Request) {
 
 	fileID := r.URL.Query().Get("fileID")
 	userID := fetchUserID(w, r)
@@ -488,5 +533,27 @@ func (h *S3Handler) UnStar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, "File removed from favourite.", 200)
+
+}
+
+// Handling trashes
+func GetTrashedFiles(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
+
+	fmt.Println("yooo")
+
+	var data models.FileListPayload
+
+	err := json.NewDecoder(r.Body).Decode(&data)
+
+	trashFiles, err := db.GetTrashFiles(userID, data.Page, data.Limit, r.Context())
+
+	if err != nil {
+		respondWithError(w, "Error fetching trash files!!", http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, trashFiles, http.StatusOK)
 
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mayukh551/cloudbox/models"
 )
 
 // JWTClaim represents the claims in the JWT token
@@ -14,11 +15,6 @@ type JWTClaim struct {
 	ID    string
 	Email string
 	jwt.RegisteredClaims
-}
-
-type RequestUser struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
 }
 
 var jwtKey = []byte("secret_key")
@@ -67,7 +63,7 @@ func Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		user := RequestUser{
+		user := models.RequestUser{
 			ID:    claims.ID,
 			Email: claims.Email,
 		}

@@ -15,6 +15,7 @@ type CreateFile struct {
 	Path      string `json:"path" validate:"required,min=3,max=1000"`
 	Size      int    `json:"size" validate:"required,min=0,max=100000000"`
 	UserID    string `json:"userID"`
+	IsTrash   bool   `json:"isTrash"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
@@ -46,6 +47,10 @@ type UpdateFileNamePayload struct {
 type DeleteFilePayload struct {
 	Id  string `json:"id" validate:"required"`
 	Key string `json:"key" validate:"required"`
+}
+
+type TrashPayload struct {
+	Files []string `json:"files" validate:"required"`
 }
 
 type PreSignedBody struct {
@@ -103,4 +108,5 @@ type FileListPayload struct {
 	Category string `json:"category"`
 	Page     int    `json:"page"`
 	Limit    int    `json:"limit"`
+	IsTrash  bool   `json:"isTrash"`
 }

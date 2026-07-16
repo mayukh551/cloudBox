@@ -53,6 +53,7 @@ func Init() error {
 			type VARCHAR(50) NOT NULL,
 			size BIGINT DEFAULT 0,
 			userID VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			isTrash BOOLEAN DEFAULT FALSE,
 			createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
@@ -63,9 +64,6 @@ func Init() error {
 	if err != nil {
 		fmt.Println("Failed to create table for files!", err)
 	}
-
-	// Ensure path column exists (Migration)
-	_, _ = DB.Exec(`ALTER TABLE files ADD COLUMN IF NOT EXISTS path VARCHAR(255) DEFAULT '';`)
 
 	// create share table if does not exist
 	shareTableQuery := `

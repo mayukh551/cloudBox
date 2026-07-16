@@ -4,10 +4,24 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mayukh551/cloudbox/models"
 )
+
+func buildTrashFilter(isTrash []bool) string {
+	includeTrash := false
+	if len(isTrash) > 0 {
+		includeTrash = isTrash[0]
+	}
+
+	if includeTrash {
+		return " AND COALESCE(isTrash, FALSE) = TRUE"
+	}
+
+	return " AND COALESCE(isTrash, FALSE) = FALSE"
+}
 
 func CreateFile(data models.CreateFile, ctxt context.Context) error {
 
@@ -62,7 +76,23 @@ func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
 	return nil
 }
 
-func ListFiles(userID string, searchTerm string, path string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
+func GetTotalSize(userID string, ctxt context.Context, isTrash ...bool) (int, error) {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	trashFilter := buildTrashFilter(isTrash)
+
+	var totalSize int
+	err := DB.QueryRowContext(queryCtxt, `SELECT COALESCE(SUM(size), 0) AS total_size FROM files WHERE userID = $1`+trashFilter, userID).Scan(&totalSize)
+
+	if err != nil {
+		return 0, ErrFileSize
+	}
+
+	return totalSize, nil
+}
+
+func ListFiles(userID string, searchTerm string, path string, page int, limit int, ctxt context.Context, isTrash ...bool) ([]models.FileList, error) {
 	var files []models.FileList
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
@@ -75,12 +105,12 @@ func ListFiles(userID string, searchTerm string, path string, page int, limit in
 
 	if searchTerm != "" {
 		rows, err = DB.QueryContext(queryCtxt,
-			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND name ~* $2 ORDER BY updatedAt DESC LIMIT $3`,
+			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND name ~* $2 AND isTrash = FALSE ORDER BY updatedAt DESC LIMIT $3`,
 			userID, searchTerm, limit,
 		)
 	} else {
 		rows, err = DB.QueryContext(queryCtxt,
-			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND path = $2 ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
+			`SELECT id, name, type, path, size, userID, createdAt, updatedAt FROM files WHERE userID = $1 AND path = $2 AND isTrash = FALSE ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
 			userID, path, limit, skip,
 		)
 	}
@@ -190,6 +220,7 @@ func UpdateFile(data models.CreateFile, ctxt context.Context) error {
 		data.Size,
 		data.UpdatedAt,
 		data.Path,
+		data.IsTrash,
 	)
 
 	if err != nil {
@@ -325,21 +356,22 @@ func RemoveStar(fileID string, userID string, ctxt context.Context) error {
 	return nil
 }
 
-func GetStarredFiles(userID string, path string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
+func GetStarredFiles(userID string, path string, page int, limit int, ctxt context.Context, isTrash ...bool) ([]models.FileList, error) {
 
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	trashFilter := buildTrashFilter(isTrash)
 	skip := (page - 1) * limit
 
 	rows, err := DB.QueryContext(queryCtxt, `
 		SELECT f.id, f.name, f.type, f.path, f.size, f.userID, f.createdAt, f.updatedAt
 		FROM starFiles sf
 		JOIN files f ON sf.fileID = f.id
-		WHERE sf.userID = $1 AND f.path = $2
+		WHERE sf.userID = $1`+trashFilter+`
 		ORDER BY f.updatedAt DESC
-		LIMIT $3 OFFSET $4`,
-		userID, path, limit, skip,
+		LIMIT $2 OFFSET $3`,
+		userID, limit, skip,
 	)
 
 	if err != nil {
@@ -375,17 +407,18 @@ func GetStarredFiles(userID string, path string, page int, limit int, ctxt conte
 	return files, nil
 }
 
-func SearchFilesByName(userID string, pattern string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
+func SearchFilesByName(userID string, pattern string, page int, limit int, ctxt context.Context, isTrash ...bool) ([]models.FileList, error) {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
+	trashFilter := buildTrashFilter(isTrash)
 	skip := (page - 1) * limit
 	fmt.Println("Pattern", pattern, userID)
 
 	rows, err := DB.QueryContext(queryCtxt, `
         SELECT id, name, type, path, size, userID, createdAt, updatedAt
         FROM files
-        WHERE name ~* $1 AND userID = $2
+        WHERE name ~* $1 AND userID = $2`+trashFilter+`
         ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
 		pattern, userID, limit, skip,
 	)
@@ -416,6 +449,86 @@ func SearchFilesByName(userID string, pattern string, page int, limit int, ctxt 
 			return nil, ErrFileFetch
 		}
 		fmt.Println(file.Name)
+		files = append(files, file)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, ErrFileFetch
+	}
+
+	return files, nil
+}
+
+func SetIsTrash(fileIDs []string, ctxt context.Context) error {
+	if len(fileIDs) == 0 {
+		return ErrFileIsNotFound
+	}
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	args := make([]interface{}, len(fileIDs))
+	placeholders := make([]string, len(fileIDs))
+	for i, id := range fileIDs {
+		args[i] = id
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+
+	query := fmt.Sprintf(`UPDATE files SET isTrash = TRUE WHERE id IN (%s)`, strings.Join(placeholders, ", "))
+
+	result, err := DB.ExecContext(queryCtxt, query, args...)
+	if err != nil {
+		return ErrInternal
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return ErrFileIsNotFound
+	}
+
+	if rowsAffected == 0 {
+		return ErrFileIsNotFound
+	}
+
+	return nil
+}
+
+func GetTrashFiles(userID string, page int, limit int, ctxt context.Context) ([]models.FileList, error) {
+	var files []models.FileList
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	var rows *sql.Rows
+	var err error
+	var recordType string = "file"
+
+	skip := (page - 1) * limit
+
+	rows, err = DB.QueryContext(queryCtxt,
+		`SELECT id, name, size, createdAt, updatedAt FROM files WHERE userID = $1 AND type = $2 AND isTrash = TRUE ORDER BY updatedAt DESC LIMIT $3 OFFSET $4`,
+		userID, recordType, limit, skip,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var file models.FileList
+		fmt.Println("mamachika!!!!")
+		if err := rows.Scan(
+			&file.ID,
+			&file.Name,
+			&file.Size,
+			&file.CreatedAt,
+			&file.UpdatedAt,
+		); err != nil {
+			return nil, ErrFileFetch
+		}
+
 		files = append(files, file)
 	}
 
