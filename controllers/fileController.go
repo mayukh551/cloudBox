@@ -35,8 +35,11 @@ func NewHandler(s3 *s3.Client) *S3Handler {
 func fetchUserID(w http.ResponseWriter, r *http.Request) string {
 	userID, err := utils.GetUserID(r)
 
-	if err != nil || userID == "" {
+	if err != nil {
 		respondWithError(w, err.Error(), http.StatusUnauthorized, err)
+		return ""
+	} else if userID == "" {
+		respondWithError(w, "userID is empty or undefined!", http.StatusUnauthorized, err)
 		return ""
 	}
 
@@ -268,6 +271,8 @@ func DeleteFolder(w http.ResponseWriter, r *http.Request) {
 // updates the path of a file/folder in the database
 func MoveFile(w http.ResponseWriter, r *http.Request) {
 
+	userID := fetchUserID(w, r)
+
 	var data models.MoveFilePayload
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		respondWithError(w, utils.JSON_DECODE_ERROR, http.StatusBadRequest, err)
@@ -276,7 +281,7 @@ func MoveFile(w http.ResponseWriter, r *http.Request) {
 
 	data.UpdatedAt = utils.GetCurrentTime()
 
-	if err := db.UpdatePath(data, r.Context()); err != nil {
+	if err := db.UpdatePath(data, userID, r.Context()); err != nil {
 		respondWithError(w, "Error while updating file path", http.StatusInternalServerError, err)
 		return
 	}
@@ -327,6 +332,7 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 				Size:      size,
 				Type:      "File",
 			},
+			userID,
 			r.Context(),
 		); err != nil {
 			respondWithError(w, "Error while updating file path", http.StatusInternalServerError, err)
@@ -386,6 +392,8 @@ func (h *S3Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 // Update a single file record with updated fields and must have FileID
 func UpdateFile(w http.ResponseWriter, r *http.Request) {
 
+	userID := fetchUserID(w, r)
+
 	var updatedData models.CreateFile
 
 	if err := json.NewDecoder(r.Body).Decode(&updatedData); err != nil {
@@ -393,7 +401,7 @@ func UpdateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.UpdateFile(updatedData, r.Context()); err != nil {
+	if err := db.UpdateFile(updatedData, userID, r.Context()); err != nil {
 		respondWithError(w, "Error while updating file metadata", http.StatusInternalServerError, err)
 		return
 	}
@@ -403,6 +411,8 @@ func UpdateFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func MoveToTrash(w http.ResponseWriter, r *http.Request) {
+
+	userID := fetchUserID(w, r)
 
 	var data models.TrashPayload
 
@@ -414,6 +424,13 @@ func MoveToTrash(w http.ResponseWriter, r *http.Request) {
 
 	if len(data.Files) == 0 {
 		respondWithError(w, "no files provided", http.StatusBadRequest, nil)
+		return
+	}
+
+	// fileID validity check
+	isExist, err := db.CheckIfFileExists(data.Files, userID, r.Context())
+	if isExist != true {
+		respondWithError(w, "Files not found to move to trash!", http.StatusBadRequest, err)
 		return
 	}
 

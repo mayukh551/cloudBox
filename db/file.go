@@ -46,17 +46,18 @@ func CreateFile(data models.CreateFile, ctxt context.Context) error {
 	return nil
 }
 
-func UpdatePath(data models.MoveFilePayload, ctxt context.Context) error {
+func UpdatePath(data models.MoveFilePayload, userID string, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
 	result, err := DB.ExecContext(queryCtxt,
 		`UPDATE files
 		 SET path = $2, updatedAt = $3
-		 WHERE id = $1`,
+		 WHERE id = $1 AND userID = $4`,
 		data.ID,
 		data.Path,
 		data.UpdatedAt,
+		userID,
 	)
 
 	if err != nil {
@@ -175,6 +176,39 @@ func CheckIfFileNameExists(filename string, path string, ctxt context.Context) (
 	}, nil
 }
 
+func CheckIfFileExists(ids []string, userID string, ctxt context.Context) (bool, error) {
+
+	if len(ids) == 0 {
+		fmt.Println("error - ids array is empty")
+		return false, ErrFileIsNotFound
+	}
+
+	queryCtxt, cancel := context.WithTimeout(ctxt, 10*time.Second)
+	defer cancel()
+
+	args := make([]interface{}, len(ids)+1)
+	placeholders := make([]string, len(ids))
+	args[0] = userID
+	for i, id := range ids {
+		args[i+1] = id
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+	}
+
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM files WHERE userID = $1 AND id IN (%s)`, strings.Join(placeholders, ", "))
+
+	var count int
+	err := DB.QueryRowContext(queryCtxt, query, args...).Scan(&count)
+	if err != nil {
+		return false, ErrInternal
+	}
+
+	if count != len(ids) {
+		return false, ErrFileIsNotFound
+	}
+
+	return true, nil
+}
+
 func GetFileByID(fileID string, ctxt context.Context) (models.FileEntity, error) {
 	var file models.FileEntity
 
@@ -206,21 +240,21 @@ func GetFileByID(fileID string, ctxt context.Context) (models.FileEntity, error)
 	return file, nil
 }
 
-func UpdateFile(data models.CreateFile, ctxt context.Context) error {
+func UpdateFile(data models.CreateFile, userID string, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
 	_, err := DB.ExecContext(queryCtxt,
 		`UPDATE files
 		 SET name = $2, type = $3, size = $4, updatedAt = $5, path = $6
-		 WHERE id = $1`,
+		 WHERE id = $1 AND userID = $7`,
 		data.ID,
 		data.Name,
 		data.Type,
 		data.Size,
 		data.UpdatedAt,
 		data.Path,
-		data.IsTrash,
+		userID,
 	)
 
 	if err != nil {
@@ -283,6 +317,7 @@ func DeleteFolder(folderName string, id string, userID string, ctxt context.Cont
 
 	defer tx.Rollback()
 
+	// delete files inside that folders by matching path
 	_, err = tx.ExecContext(queryCtxt,
 		`DELETE FROM files WHERE path ~ ('(^|/)' || $1 || '(/|$)') AND userID = $2`,
 		folderName, userID,
@@ -293,9 +328,10 @@ func DeleteFolder(folderName string, id string, userID string, ctxt context.Cont
 		return ErrDeleteFilesInsideFolder
 	}
 
+	// delete folder
 	_, err = tx.ExecContext(queryCtxt,
-		`DELETE FROM files WHERE id = $1`,
-		id,
+		`DELETE FROM files WHERE id = $1 AND userID = $2 AND type = 'Folder'`,
+		id, userID,
 	)
 
 	if err != nil {
