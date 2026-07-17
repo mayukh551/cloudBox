@@ -38,7 +38,7 @@ func fileRoutes(api *mux.Router) error {
 	// file trash
 	file.HandleFunc("/trash-get", c.GetTrashedFiles).Methods("PUT")
 	file.HandleFunc("/trash-delete-forever", h.DeleteFile).Methods("PUT")
-	file.HandleFunc("/trash-restore", c.UpdateFile).Methods("PUT")
+	file.HandleFunc("/trash-restore", c.RestoreTrash).Methods("PUT")
 
 	return nil
 }

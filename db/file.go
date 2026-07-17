@@ -459,7 +459,7 @@ func SearchFilesByName(userID string, pattern string, page int, limit int, ctxt 
 	return files, nil
 }
 
-func SetIsTrash(fileIDs []string, ctxt context.Context) error {
+func SetIsTrash(fileIDs []string, isTrash bool, ctxt context.Context) error {
 	if len(fileIDs) == 0 {
 		return ErrFileIsNotFound
 	}
@@ -467,14 +467,15 @@ func SetIsTrash(fileIDs []string, ctxt context.Context) error {
 	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
 	defer cancel()
 
-	args := make([]interface{}, len(fileIDs))
+	args := make([]interface{}, len(fileIDs)+1)
 	placeholders := make([]string, len(fileIDs))
+	args[0] = isTrash
 	for i, id := range fileIDs {
-		args[i] = id
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i+1] = id
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
 	}
 
-	query := fmt.Sprintf(`UPDATE files SET isTrash = TRUE WHERE id IN (%s)`, strings.Join(placeholders, ", "))
+	query := fmt.Sprintf(`UPDATE files SET isTrash = $1 WHERE id IN (%s)`, strings.Join(placeholders, ", "))
 
 	result, err := DB.ExecContext(queryCtxt, query, args...)
 	if err != nil {

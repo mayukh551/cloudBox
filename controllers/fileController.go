@@ -417,7 +417,7 @@ func MoveToTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.SetIsTrash(data.Files, r.Context()); err != nil {
+	if err := db.SetIsTrash(data.Files, true, r.Context()); err != nil {
 		respondWithError(w, "Error moving files to trash", http.StatusInternalServerError, err)
 		return
 	}
@@ -556,4 +556,17 @@ func GetTrashedFiles(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, trashFiles, http.StatusOK)
 
+}
+
+func RestoreTrash(w http.ResponseWriter, r *http.Request) {
+
+	ids := r.URL.Query()["fileID"]
+
+	// Restore: set isTrash = false
+	if err := db.SetIsTrash(ids, false, r.Context()); err != nil {
+		respondWithError(w, "Error restoring files from trash", http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, "Files restored", http.StatusOK)
 }
