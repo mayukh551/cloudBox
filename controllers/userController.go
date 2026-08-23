@@ -100,3 +100,29 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, "User deleted successfully", http.StatusOK)
 }
+
+func ForgotPassword(w http.ResponseWriter, r *http.Request) {
+
+	// need email
+	// send new link to email
+	// this link allows user to enter new password and confirm password
+
+}
+
+func GetFriends(w http.ResponseWriter, r *http.Request) {
+	id, err := utils.GetUserID(r)
+
+	if err != nil {
+		respondWithJSON(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	friends, err := db.GetFriends(id, r.Context())
+
+	if err != nil {
+		respondWithJSON(w, "Error fetching friends", http.StatusInternalServerError)
+		return
+	}
+
+	respondWithJSON(w, friends, http.StatusOK)
+}

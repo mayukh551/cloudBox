@@ -29,8 +29,6 @@ func main() {
 		panic(err)
 	}
 
-	db.InitRedis()
-
 	// utils.Configure("go_logs.log")
 
 	r := routers.Router()

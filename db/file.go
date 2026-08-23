@@ -555,7 +555,6 @@ func GetTrashFiles(userID string, page int, limit int, ctxt context.Context) ([]
 
 	for rows.Next() {
 		var file models.FileList
-		fmt.Println("mamachika!!!!")
 		if err := rows.Scan(
 			&file.ID,
 			&file.Name,

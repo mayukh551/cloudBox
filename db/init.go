@@ -99,6 +99,22 @@ func Init() error {
 		fmt.Println("Failed to create table for starFiles!", err)
 	}
 
+	// Create friends table if does not exist
+	friendTableQuery := `
+		CREATE TABLE IF NOT EXISTS friends (
+			user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			friend_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, friend_id)
+		);
+	`
+
+	_, err = DB.Exec(friendTableQuery)
+
+	if err != nil {
+		fmt.Println("Failed to create table for friends!", err)
+	}
+
 	println("Database initialized and tables created if they did not exist.")
 
 	return nil

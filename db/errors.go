@@ -23,3 +23,6 @@ var ErrInternal = errors.New("Something went wrong, we are checking...")
 var ErrShareUnknown = errors.New("Failed to delete this shared file!")
 var ErrShareNotfound = errors.New("Shared file cannot be found!")
 var ErrShareFetch = errors.New("Error when loading your shared files!")
+
+// cache
+var ErrDelAllFileCache = errors.New("Error when deleting cache for general, favourites, and shared based files")

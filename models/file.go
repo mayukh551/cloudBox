@@ -42,6 +42,7 @@ type UpdateFileNamePayload struct {
 	Name      string `json:"title" validate:"required,min=3,max=100"`
 	OldTitle  string `json:"oldTitle" validate:"required,min=3,max=100"`
 	UpdatedAt string `json:"updatedAt"`
+	Path      string `json:"path" validate:"required,min=3,max=100"`
 }
 
 type DeleteFilePayload struct {
@@ -69,6 +70,7 @@ type PreSignedResponse struct {
 type MoveFilePayload struct {
 	ID        string `json:"id" validate:"required"`
 	Path      string `json:"path" validate:"required,min=0,max=1000"`
+	OldPath   string `json:"path" validate:"required,min=0,max=1000"`
 	UpdatedAt string `json:"updatedAt"`
 }
 

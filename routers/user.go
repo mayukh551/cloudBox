@@ -15,4 +15,5 @@ func userRoutes(api *mux.Router) {
 	user.HandleFunc("/update", controllers.UpdateUserDetails).Methods("PUT")
 	user.HandleFunc("/delete", controllers.DeleteUser).Methods("DELETE")
 	user.HandleFunc("/find", controllers.FindUserByEmail).Methods("PUT")
+	user.HandleFunc("/forogt-password", controllers.ForgotPassword).Methods("PUT")
 }

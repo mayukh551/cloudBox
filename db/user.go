@@ -173,3 +173,65 @@ func VerifyUser(email string, password string, ctxt context.Context) (models.Use
 	}, nil
 
 }
+
+// AddFriend adds a friend association to the friends table
+func AddFriend(userID, friendID string, ctxt context.Context) error {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	if userID == friendID {
+		return fmt.Errorf("cannot add yourself as a friend")
+	}
+
+	_, err := DB.ExecContext(queryCtxt,
+		`INSERT INTO friends (user_id, friend_id)
+		 VALUES ($1, $2)
+		 ON CONFLICT (user_id, friend_id) DO NOTHING`,
+		userID, friendID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("error adding friend: %w", err)
+	}
+
+	return nil
+}
+
+// GetFriends retrieves a list of a user's friends
+func GetFriends(userID string, ctxt context.Context) ([]models.ResponseUser, error) {
+	queryCtxt, cancel := context.WithTimeout(ctxt, 30*time.Second)
+	defer cancel()
+
+	rows, err := DB.QueryContext(queryCtxt,
+		`SELECT u.id, u.name, u.email 
+		 FROM users u 
+		 JOIN friends f ON u.id = f.friend_id 
+		 WHERE f.user_id = $1
+		 ORDER BY f.created_at DESC`,
+		userID,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error fetching friends: %w", err)
+	}
+	defer rows.Close()
+
+	var friends []models.ResponseUser
+	for rows.Next() {
+		var friend models.ResponseUser
+		if err := rows.Scan(&friend.ID, &friend.Name, &friend.Email); err != nil {
+			return nil, fmt.Errorf("error scanning friend: %w", err)
+		}
+		friends = append(friends, friend)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error in rows fetching friends: %w", err)
+	}
+
+	if friends == nil {
+		friends = []models.ResponseUser{} // Return empty array instead of null
+	}
+
+	return friends, nil
+}

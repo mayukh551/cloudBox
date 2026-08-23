@@ -41,8 +41,6 @@ func ValidatePassword(textPassword string, hashPassword string) bool {
 
 func GenerateJWTToken(user models.User) (string, error) {
 
-	fmt.Println("in GenerateJWTToken", user)
-
 	expirationTime := time.Now().Add(24 * time.Hour)
 
 	// Create claims with user data

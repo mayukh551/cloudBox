@@ -29,7 +29,7 @@ func fileRoutes(api *mux.Router) error {
 
 	// --- Plain DB-backed routes (no S3 interaction needed) ---
 
-	// file.HandleFunc("/get-list", m.Cache(h.GetList)).Methods("PUT")
+	// file.Use(m.Cache)
 	file.HandleFunc("/get-list", c.GetList).Methods("PUT")
 	file.HandleFunc("/get-total-size", c.GetSize).Methods("GET")
 	file.HandleFunc("/delete", c.MoveToTrash).Methods("PUT")
@@ -41,7 +41,6 @@ func fileRoutes(api *mux.Router) error {
 
 	// --- S3-backed routes (use the handler bound to the S3 client) ---
 	// implementing rate limiting for the following routes
-	// file.Use(middlewares.RateLimiter)
 	file.HandleFunc("/download/{type}", h.DownloadFile).Methods("PUT")
 	file.HandleFunc("/upload/{type}", h.UploadFile).Methods("POST")
 	file.HandleFunc("/rename", h.Rename).Methods("PUT")
